@@ -25,6 +25,32 @@ fn backBtn() bool {
     return rg.button(.init(24, 24, size, size), "<");
 }
 
+fn sierpinskiTriangleRecurse(p1: rl.Vector2, p2: rl.Vector2, p3: rl.Vector2, color: rl.Color, iterations: usize) void {
+    if (iterations == 0) {
+        rl.drawTriangle(p1, p2, p3, color);
+    } else {
+        // the inner triangle is defined by the midpoints of the edges of the outer triangle
+        const mid12 = p1.lerp(p2, 0.5);
+        const mid23 = p2.lerp(p3, 0.5);
+        const mid31 = p3.lerp(p1, 0.5);
+        sierpinskiTriangleRecurse(p1, mid12, mid31, color, iterations - 1);
+        sierpinskiTriangleRecurse(mid12, p2, mid23, color, iterations - 1);
+        sierpinskiTriangleRecurse(mid31, mid23, p3, color, iterations - 1);
+    }
+}
+
+fn sierpinskiTriangle(origin_x: f32, origin_y: f32, size: f32) void {
+    // find the initial vertexes of the initial equilateral triangle
+    const height = size * 3 / 4;
+    const offset_y = (size - height) / 2;
+    const p1 = rl.Vector2{ .x = origin_x + size / 2, .y = origin_y + offset_y };
+    const p2 = rl.Vector2{ .x = origin_x, .y = origin_y + offset_y + height };
+    const p3 = p2.add(rl.Vector2{ .x = size, .y = 0 });
+    // draw triangles recursively
+    const iterations = 6;
+    sierpinskiTriangleRecurse(p1, p2, p3, .light_gray, iterations);
+}
+
 fn kockSegment(p1: rl.Vector2, p2: rl.Vector2, iterations: usize, color: rl.Color) void {
     // divide the line segment into thirds
     const third_x = (p2.x - p1.x) / 3;
@@ -49,14 +75,14 @@ fn kockSegment(p1: rl.Vector2, p2: rl.Vector2, iterations: usize, color: rl.Colo
     }
 }
 
-fn kockSnowflake(origin_x: i32, origin_y: i32, size: i32) void {
+fn kockSnowflake(origin_x: f32, origin_y: f32, size: f32) void {
     // find the initial vertexes of the equilateral triangle
     const color: rl.Color = .light_gray;
-    const height = @divTrunc(size * 3, 4);
-    const offset_y = @as(f32, @floatFromInt(size - height));
-    const p1 = rl.Vector2{ .x = @floatFromInt(origin_x), .y = @as(f32, @floatFromInt(origin_y)) + offset_y };
-    const p2 = p1.add(rl.Vector2{ .x = @floatFromInt(size), .y = 0 });
-    const p3 = p1.add(rl.Vector2{ .x = @floatFromInt(@divTrunc(size, 2)), .y = @floatFromInt(height) });
+    const height = size * 3 / 4;
+    const offset_y = size - height;
+    const p1 = rl.Vector2{ .x = origin_x, .y = origin_y + offset_y };
+    const p2 = p1.add(rl.Vector2{ .x = size, .y = 0 });
+    const p3 = p1.add(rl.Vector2{ .x = size / 2, .y = height });
     // then recursively draw the snowflake pattern on each edge
     const iterations = 5;
     kockSegment(p1, p2, iterations, color);
@@ -64,23 +90,44 @@ fn kockSnowflake(origin_x: i32, origin_y: i32, size: i32) void {
     kockSegment(p3, p1, iterations, color);
 }
 
+const Fractal = enum(i32) { kockSnowflake, sierpinskiTriangle };
+
+fn fractalSelectBtns(fractalType: *Fractal) void {
+    const offset_x = 24 + 30 + 24;
+    const offset_y = 24;
+    const size_x = 120;
+    const size_y = 30;
+    const r = rl.Rectangle{ .x = offset_x, .y = offset_y, .width = size_x, .height = size_y };
+    var active = @intFromEnum(fractalType.*);
+    _ = rg.toggleGroup(r, "Kock Snowflake;Sierpinski Triangle", &active);
+    fractalType.* = @enumFromInt(active);
+}
+
 fn fractal() bool {
+    const S = struct {
+        var fractal: Fractal = .kockSnowflake;
+    };
     // get largest square that fits within the window
-    const size = @min(rl.getRenderWidth(), rl.getRenderHeight()) - 50;
-    const origin_x = @divTrunc(rl.getRenderWidth() - size, 2);
-    const origin_y = @divTrunc(rl.getRenderHeight() - size, 2);
+    const size: f32 = @floatFromInt(@min(rl.getRenderWidth(), rl.getRenderHeight()) - 50);
+    const origin_x: f32 = (@as(f32, @floatFromInt(rl.getRenderWidth())) - size) / 2;
+    const origin_y: f32 = (@as(f32, @floatFromInt(rl.getRenderHeight())) - size) / 2;
     // draw background
     rl.beginDrawing();
     defer rl.endDrawing();
     rl.clearBackground(getBackgroundColor());
     // draw debug square
-    //rl.drawRectangle(origin_x, origin_y, size, size, .yellow);
-    // draw snowflake
-    kockSnowflake(origin_x, origin_y, size);
+    //rl.drawRectangleRec(rl.Rectangle{ .x = origin_x, .y = origin_y, .width = size, .height = size }, .yellow);
+    switch (S.fractal) {
+        .kockSnowflake => kockSnowflake(origin_x, origin_y, size),
+        .sierpinskiTriangle => sierpinskiTriangle(origin_x, origin_y, size),
+    }
     // draw back button
     if (backBtn()) {
         return true;
     }
+    // draw fractal selection buttons
+    fractalSelectBtns(&S.fractal);
+
     return false;
 }
 
