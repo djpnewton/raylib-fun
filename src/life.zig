@@ -121,8 +121,8 @@ pub fn gameOfLife(io: std.Io) bool {
         }
     }
     // draw generation count
-    const gen_text = std.fmt.allocPrintSentinel(std.heap.page_allocator, "Generation: {}", .{S.generation}, 0) catch "Error formatting generation text";
-    defer std.heap.page_allocator.free(gen_text);
+    var gen_buf: [64]u8 = undefined;
+    const gen_text = std.fmt.bufPrintZ(&gen_buf, "Generation: {}", .{S.generation}) catch "Generation: ???";
     rl.drawText(gen_text, offset_x, offset_y + grid_height * cell_size + 10, 10, .light_gray);
     // handle input
     const mouse_x = rl.getMouseX();
@@ -133,9 +133,9 @@ pub fn gameOfLife(io: std.Io) bool {
         // highlight cell under mouse cursor
         rl.drawRectangleLines(offset_x + grid_x * cell_size, offset_y + grid_y * cell_size, cell_size, cell_size, .sky_blue);
         // toggle cell state on click
-        if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
+        if (rl.isMouseButtonDown(rl.MouseButton.left)) {
             const idx = @as(usize, @intCast(grid_x * grid_height + grid_y));
-            S.grid[idx] = !S.grid[idx];
+            S.grid[idx] = true;
             S.running = false; // pause the game when user interacts with the grid
         }
     }
@@ -147,7 +147,7 @@ pub fn gameOfLife(io: std.Io) bool {
         // toggle cell state on touch
         if (grid_x >= 0 and grid_x < grid_width and grid_y >= 0 and grid_y < grid_height) {
             const idx = @as(usize, @intCast(grid_x * grid_height + grid_y));
-            S.grid[idx] = !S.grid[idx];
+            S.grid[idx] = true;
             S.running = false; // pause the game when user interacts with the grid
         }
     }

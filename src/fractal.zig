@@ -121,7 +121,7 @@ const Fractal = enum(i32) { kockSnowflake, sierpinskiTriangle, tree };
 fn fractalSelectBtns(fractalType: *Fractal) void {
     const offset_x = 24 + 30 + 24;
     const offset_y = 24;
-    const size_x = 120;
+    const size_x = 100;
     const size_y = 30;
     const r = rl.Rectangle{ .x = offset_x, .y = offset_y, .width = size_x, .height = size_y };
     var active = @intFromEnum(fractalType.*);
