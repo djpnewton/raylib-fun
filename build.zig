@@ -97,6 +97,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
             .flags = emcc_flags,
             .settings = emcc_settings,
+            .shell_file_path = b.path("src/shell.html"),
             .install_dir = install_dir,
         });
         b.getInstallStep().dependOn(emcc_step);
