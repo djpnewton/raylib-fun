@@ -5,6 +5,7 @@ const rg = @import("raygui");
 const utils = @import("utils.zig");
 const fractal = @import("fractal.zig");
 const life = @import("life.zig");
+const raycast = @import("raycast.zig");
 
 pub fn main(init: std.process.Init) !void {
     // Initialization
@@ -19,7 +20,7 @@ pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    var demo: ?*const fn (io: std.Io) bool = null;
+    var demo: ?*const fn (io: std.Io) bool = null; // default demo to run on startup
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
@@ -41,6 +42,8 @@ pub fn main(init: std.process.Init) !void {
             demo = fractal.fractal;
         if (rg.button(.init(24, 24 + 30 + 24, 120, 30), "Game of Life"))
             demo = life.gameOfLife;
+        if (rg.button(.init(24, 24 + 2 * (30 + 24), 120, 30), "Raycast"))
+            demo = raycast.raycast;
 
         utils.drawTextCentered("raylib-fun", 20, .light_gray);
         //----------------------------------------------------------------------------------
