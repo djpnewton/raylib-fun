@@ -39,6 +39,9 @@ jobs:
       - name: Build for web
         run: zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseSmall
 
+      - name: Cache-bust JS reference in HTML
+        run: sed -i "s/raylib_fun\.js/raylib_fun.js?v=$(date -u +%Y%m%d%H%M%S)/g" zig-out/web/raylib_fun.html
+
       - name: copy to index.html
         run: cp zig-out/web/raylib_fun.html zig-out/web/index.html
 
