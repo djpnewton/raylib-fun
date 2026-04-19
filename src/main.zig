@@ -4,8 +4,9 @@ const rg = @import("raygui");
 
 const utils = @import("utils.zig");
 const fractal = @import("fractal.zig");
+const life = @import("life.zig");
 
-pub fn main() anyerror!void {
+pub fn main(init: std.process.Init) !void {
     // Initialization
     //--------------------------------------------------------------------------------------
     const screenWidth = 800;
@@ -18,13 +19,13 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    var demo: ?*const fn () bool = null;
+    var demo: ?*const fn (io: std.Io) bool = null;
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // run demo if selected
         if (demo) |demo_fn| {
-            if (demo_fn()) {
+            if (demo_fn(init.io)) {
                 demo = null;
             }
             continue;
@@ -38,12 +39,10 @@ pub fn main() anyerror!void {
 
         if (rg.button(.init(24, 24, 120, 30), "Fractal"))
             demo = fractal.fractal;
+        if (rg.button(.init(24, 24 + 30 + 24, 120, 30), "Game of Life"))
+            demo = life.gameOfLife;
 
-        const offset_x = @divTrunc(rl.getRenderWidth(), 2);
-        const offset_y = @divTrunc(rl.getRenderHeight(), 2);
-        const font_size = 20;
-        const text_width = rl.measureText("raylib-fun", font_size);
-        rl.drawText("raylib-fun", offset_x - @divTrunc(text_width, 2), offset_y - @divTrunc(font_size, 2), font_size, .light_gray);
+        utils.drawTextCentered("raylib-fun", 20, .light_gray);
         //----------------------------------------------------------------------------------
     }
 }

@@ -23,3 +23,10 @@ pub fn backBtn() bool {
     const size = 30;
     return rg.button(.init(24, 24, size, size), "<");
 }
+
+pub fn drawTextCentered(text: [:0]const u8, font_size: i32, color: rl.Color) void {
+    const text_width = rl.measureText(text, font_size);
+    const offset_x = @divTrunc(rl.getRenderWidth(), 2) - @divTrunc(text_width, 2);
+    const offset_y = @divTrunc(rl.getRenderHeight(), 2) - @divTrunc(font_size, 2);
+    rl.drawText(text, offset_x, offset_y, font_size, color);
+}

@@ -129,7 +129,7 @@ fn fractalSelectBtns(fractalType: *Fractal) void {
     fractalType.* = @enumFromInt(active);
 }
 
-pub fn fractal() bool {
+pub fn fractal(_: std.Io) bool {
     const S = struct {
         var fractal: Fractal = .kockSnowflake;
     };
