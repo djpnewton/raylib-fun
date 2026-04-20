@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 
-const utils = @import("utils.zig");
+const ut = @import("utils.zig");
 
 const grid_width = 50;
 const grid_height = 50;
@@ -125,21 +125,6 @@ fn calc(grid: *[grid_width * grid_height]bool) void {
     @memcpy(grid, &new_grid);
 }
 
-fn startStopBtn(running: *bool) void {
-    const label = if (running.*) "Stop" else "Start";
-    if (rg.button(.init(24 + 30 + 24, 24, 80, 30), label)) {
-        running.* = !running.*;
-    }
-}
-
-fn speedSlider(speed: *i64) void {
-    // speed slider
-    const bounds = rl.Rectangle{ .x = 24 + 30 + 24 + 80 + 24, .y = 24 + 7, .width = 100, .height = 15 };
-    var speed_f32: f32 = @floatFromInt(speed.*);
-    _ = rg.slider(bounds, null, "Speed", &speed_f32, 1, 10);
-    speed.* = @intFromFloat(speed_f32);
-}
-
 pub fn gameOfLife(io: std.Io) bool {
     const S = struct {
         var grid: [grid_width * grid_height]bool = .{false} ** (grid_width * grid_height);
@@ -164,15 +149,18 @@ pub fn gameOfLife(io: std.Io) bool {
     // start drawing
     rl.beginDrawing();
     defer rl.endDrawing();
-    rl.clearBackground(utils.getBackgroundColor());
+    rl.clearBackground(ut.getBackgroundColor());
     // draw bounding box for the grid
-    const cell_size = @min(20, @divTrunc(rl.getRenderWidth() - 100, grid_width));
+    const btn_width_scenes = 65;
+    const margin_x = ut.button_spacing + btn_width_scenes;
+    const margin_y = ut.button_spacing + ut.button_height;
+    const cell_size = @min(@min(20, @divTrunc(rl.getRenderWidth() - margin_x, grid_width)), @min(20, @divTrunc(rl.getRenderHeight() - margin_y, grid_height)));
     const grid_pixel_width = grid_width * cell_size;
     const grid_pixel_height = grid_height * cell_size;
-    const offset_x = @divTrunc(rl.getRenderWidth() - grid_pixel_width, 2);
-    const offset_y = @divTrunc(rl.getRenderHeight() - grid_pixel_height, 2);
+    const offset_x = @divTrunc(rl.getRenderWidth() - margin_x - grid_pixel_width, 2) + margin_x;
+    const offset_y = @divTrunc(rl.getRenderHeight() - margin_y - grid_pixel_height, 2) + margin_y;
     if (cell_size < 3) {
-        utils.drawTextCentered("Window too small to display grid", 10, .light_gray);
+        ut.drawTextCentered("Window too small to display grid", 10, .light_gray);
     } else {
         // draw grid lines
         for (0..grid_height + 1) |grid_y| {
@@ -194,10 +182,6 @@ pub fn gameOfLife(io: std.Io) bool {
             }
         }
     }
-    // draw generation count
-    var gen_buf: [64]u8 = undefined;
-    const gen_text = std.fmt.bufPrintZ(&gen_buf, "Generation: {}", .{S.generation}) catch "Generation: ???";
-    rl.drawText(gen_text, offset_x, offset_y + grid_height * cell_size + 10, 10, .light_gray);
     // handle input
     const mouse_x = rl.getMouseX();
     const mouse_y = rl.getMouseY();
@@ -226,28 +210,44 @@ pub fn gameOfLife(io: std.Io) bool {
         }
     }
     // controls
-    startStopBtn(&S.running);
-    var speed = @divTrunc(100, S.time_step_ms); // convert to 1-10 range for slider
-    speedSlider(&speed);
-    S.time_step_ms = @divTrunc(100, speed); // convert back to ms
+    const btn_width_stop_start: i32 = 80;
+    var x: i32 = ut.button_spacing * 2 + btn_width_stop_start;
+    var y: i32 = ut.button_spacing;
+    if (ut.btn(x, y, btn_width_stop_start, ut.button_height, if (S.running) "Stop" else "Start")) {
+        S.running = !S.running;
+    }
+    x += btn_width_stop_start + ut.button_spacing;
+    const bounds = rl.Rectangle{ .x = ut.i32tof32(x), .y = ut.i32tof32(y), .width = ut.i32tof32(btn_width_stop_start), .height = ut.i32tof32(ut.button_height) };
+    var speed_f32: f32 = @floatFromInt(@divTrunc(100, S.time_step_ms));
+    _ = rg.slider(bounds, null, "Speed", &speed_f32, 1, 10);
+    S.time_step_ms = @divTrunc(100, @as(i32, @intFromFloat(speed_f32))); // convert back to ms
     // scene buttons
-    if (utils.btn(24, 24 + 30 + 24, 80, 30, "Glider")) {
+    x = ut.button_spacing;
+    y += ut.button_height + ut.button_spacing;
+    if (ut.btn(x, y, btn_width_scenes, ut.button_height, "Glider")) {
         loadGlider(&S.grid);
         S.generation = 0;
         S.running = true;
     }
-    if (utils.btn(24, 24 + 30 + 24 + 30 + 24, 80, 30, "Glider Gun")) {
+    y += ut.button_height + ut.button_spacing;
+    if (ut.btn(x, y, btn_width_scenes, ut.button_height, "Glider Gun")) {
         loadGliderGun(&S.grid);
         S.generation = 0;
         S.running = true;
     }
-    if (utils.btn(24, 24 + 30 + 24 + 30 + 24 + 30 + 24, 80, 30, "Pulsar")) {
+    y += ut.button_height + ut.button_spacing;
+    if (ut.btn(x, y, btn_width_scenes, ut.button_height, "Pulsar")) {
         loadPulsar(&S.grid);
         S.generation = 0;
         S.running = true;
     }
+    // draw generation count
+    y += ut.button_height + ut.button_spacing;
+    var gen_buf: [64]u8 = undefined;
+    const gen_text = std.fmt.bufPrintZ(&gen_buf, "Gen.: {}", .{S.generation}) catch "Generation: ???";
+    rl.drawText(gen_text, x, y, 10, .light_gray);
     // back button
-    if (utils.backBtn()) {
+    if (ut.backBtn()) {
         return true;
     }
     return false;

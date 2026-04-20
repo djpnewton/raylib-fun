@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 
-const utils = @import("utils.zig");
+const ut = @import("utils.zig");
 
 fn init_walls() []const []const rl.Vector2 {
     const S = struct {
@@ -65,7 +65,7 @@ pub fn raycast(_: std.Io) bool {
         var cast_rays: bool = true;
     };
     if (!S.initialized) {
-        S.pos = rl.Vector2{ .x = utils.i32tof32(rl.getRenderWidth()) / 2, .y = utils.i32tof32(rl.getRenderHeight()) / 2 };
+        S.pos = rl.Vector2{ .x = ut.i32tof32(rl.getRenderWidth()) / 2, .y = ut.i32tof32(rl.getRenderHeight()) / 2 };
         S.initialized = true;
     }
     // start drawing
@@ -81,7 +81,7 @@ pub fn raycast(_: std.Io) bool {
     // cast rays
     if (S.cast_rays) {
         for (0..S.num_rays) |i| {
-            const ray_angle = S.angle - S.fov / 2 + (S.fov / utils.usizetof32(S.num_rays)) * utils.usizetof32(i);
+            const ray_angle = S.angle - S.fov / 2 + (S.fov / ut.usizetof32(S.num_rays)) * ut.usizetof32(i);
             const ray_dir = rl.Vector2{ .x = std.math.cos(ray_angle), .y = std.math.sin(ray_angle) };
             const ray_end = rl.Vector2{ .x = S.pos.x + ray_dir.x * S.max_depth, .y = S.pos.y + ray_dir.y * S.max_depth };
             // draw collisions with white blob
@@ -120,12 +120,22 @@ pub fn raycast(_: std.Io) bool {
     // draw location
     rl.drawCircleV(S.pos, 5, .red);
     // controls
-    S.left_btn = utils.btnDown(24 + 30 + 24, 24, 50, 30, "Left");
-    S.right_btn = utils.btnDown(24 + 30 + 24 + 50 + 24, 24, 50, 30, "Right");
-    S.up_btn = utils.btnDown(24 + 30 + 24 + 50 + 24 + 50 + 24, 24, 50, 30, "Fwd");
-    S.down_btn = utils.btnDown(24 + 30 + 24 + 50 + 24 + 50 + 24 + 50 + 24, 24, 50, 30, "Back");
-    utils.checkbox(24, 24 + 30 + 24, 20, 20, "Show All Walls", &S.show_all_walls);
-    utils.checkbox(24, 24 + 30 + 24 + 20 + 24, 20, 20, "Cast Rays", &S.cast_rays);
+    var x: i32 = ut.button_spacing + ut.button_height + ut.button_spacing;
+    var y: i32 = ut.button_spacing;
+    const btn_width = 50;
+    S.left_btn = ut.btnDown(x, y, btn_width, ut.button_height, "Left");
+    x += btn_width + ut.button_spacing;
+    S.right_btn = ut.btnDown(x, y, btn_width, ut.button_height, "Right");
+    x += btn_width + ut.button_spacing;
+    S.up_btn = ut.btnDown(x, y, btn_width, ut.button_height, "Fwd");
+    x += btn_width + ut.button_spacing;
+    S.down_btn = ut.btnDown(x, y, btn_width, ut.button_height, "Back");
+    x = ut.button_spacing;
+    y += ut.button_height + ut.button_spacing;
+    const cb_width = 20;
+    ut.checkbox(x, y, cb_width, cb_width, "Show All Walls", &S.show_all_walls);
+    y += cb_width + ut.button_spacing;
+    ut.checkbox(x, y, cb_width, cb_width, "Cast Rays", &S.cast_rays);
     // input handling
     if (rl.isKeyDown(rl.KeyboardKey.left) or S.left_btn) {
         S.angle -= 0.05;
@@ -144,7 +154,7 @@ pub fn raycast(_: std.Io) bool {
         S.down_btn = false; // reset button state until next frame
     }
     // back button
-    if (utils.backBtn()) {
+    if (ut.backBtn()) {
         return true;
     }
     return false;

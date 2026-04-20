@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 
-const utils = @import("utils.zig");
+const ut = @import("utils.zig");
 
 fn interationsSlider(iterations: *usize) void {
     // iterations slider
@@ -96,33 +96,31 @@ fn treeBranch(p1: rl.Vector2, p2: rl.Vector2, color: rl.Color, iterations: usize
     }
 }
 
-fn treeUi(iterations: *usize, angle: *f32) void {
-    // iterations slider
-    interationsSlider(iterations);
-    // angle slider
-    const bounds2 = rl.Rectangle{ .x = 24, .y = 24 + 30 + 24 + 15 + 15, .width = 100, .height = 15 };
-    _ = rg.slider(bounds2, null, "Angle", angle, 0, std.math.pi / 2.0);
-}
-
 fn tree(origin_x: f32, origin_y: f32, size: f32) void {
     const S = struct {
         var iterations: usize = 7;
         var angle: f32 = std.math.pi / 6.0;
     };
-    treeUi(&S.iterations, &S.angle);
     const color: rl.Color = .light_gray;
     const p1 = rl.Vector2{ .x = origin_x + size / 2, .y = origin_y + size };
     const p2 = rl.Vector2{ .x = origin_x + size / 2, .y = origin_y + 2 * size / 3 };
     treeBranch(p1, p2, color, S.iterations, S.angle);
+    // iterations slider
+    interationsSlider(&S.iterations);
+    // angle slider
+    const x = ut.button_spacing;
+    const y = ut.button_spacing + ut.button_height + ut.button_spacing + 15 + 15;
+    const bounds2 = rl.Rectangle{ .x = x, .y = y, .width = 100, .height = 15 };
+    _ = rg.slider(bounds2, null, "Angle", &S.angle, 0, std.math.pi / 2.0);
 }
 
 const Fractal = enum(i32) { kockSnowflake, sierpinskiTriangle, tree };
 
 fn fractalSelectBtns(fractalType: *Fractal) void {
-    const offset_x = 24 + 30 + 24;
-    const offset_y = 24;
+    const offset_x = ut.button_spacing + ut.button_height + ut.button_spacing;
+    const offset_y = ut.button_spacing;
     const size_x = 100;
-    const size_y = 30;
+    const size_y = ut.button_height;
     const r = rl.Rectangle{ .x = offset_x, .y = offset_y, .width = size_x, .height = size_y };
     var active = @intFromEnum(fractalType.*);
     _ = rg.toggleGroup(r, "Kock Snowflake;Sierpinski Triangle;Tree", &active);
@@ -140,7 +138,7 @@ pub fn fractal(_: std.Io) bool {
     // draw background
     rl.beginDrawing();
     defer rl.endDrawing();
-    rl.clearBackground(utils.getBackgroundColor());
+    rl.clearBackground(ut.getBackgroundColor());
     // draw debug square
     //rl.drawRectangleRec(rl.Rectangle{ .x = origin_x, .y = origin_y, .width = size, .height = size }, .yellow);
     switch (S.fractal) {
@@ -149,7 +147,7 @@ pub fn fractal(_: std.Io) bool {
         .tree => tree(origin_x, origin_y, size),
     }
     // draw back button
-    if (utils.backBtn()) {
+    if (ut.backBtn()) {
         return true;
     }
     // draw fractal selection buttons

@@ -2,7 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 
-const utils = @import("utils.zig");
+const ut = @import("utils.zig");
 const fractal = @import("fractal.zig");
 const life = @import("life.zig");
 const raycast = @import("raycast.zig");
@@ -13,7 +13,7 @@ pub fn main(init: std.process.Init) !void {
     const screenWidth = 800;
     const screenHeight = 450;
 
-    rl.setConfigFlags(rl.ConfigFlags{ .window_resizable = true });
+    rl.setConfigFlags(rl.ConfigFlags{ .window_resizable = true, .msaa_4x_hint = true });
     rl.initWindow(screenWidth, screenHeight, "raylib-fun");
     defer rl.closeWindow(); // Close window and OpenGL context
 
@@ -36,16 +36,21 @@ pub fn main(init: std.process.Init) !void {
         //----------------------------------------------------------------------------------
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(utils.getBackgroundColor());
+        rl.clearBackground(ut.getBackgroundColor());
 
-        if (rg.button(.init(24, 24, 120, 30), "Fractal"))
+        const x = ut.button_spacing;
+        var y: i32 = ut.button_spacing;
+        const btn_width = 120;
+        if (ut.btn(x, y, btn_width, ut.button_height, "Fractal"))
             demo = fractal.fractal;
-        if (rg.button(.init(24, 24 + 30 + 24, 120, 30), "Game of Life"))
+        y += ut.button_height + ut.button_spacing;
+        if (ut.btn(x, y, btn_width, ut.button_height, "Game of Life"))
             demo = life.gameOfLife;
-        if (rg.button(.init(24, 24 + 2 * (30 + 24), 120, 30), "Raycast"))
+        y += ut.button_height + ut.button_spacing;
+        if (ut.btn(x, y, btn_width, ut.button_height, "Raycast"))
             demo = raycast.raycast;
 
-        utils.drawTextCentered("raylib-fun", 20, .light_gray);
+        ut.drawTextCentered("raylib-fun", 20, .light_gray);
         //----------------------------------------------------------------------------------
     }
 }
