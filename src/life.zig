@@ -7,13 +7,87 @@ const utils = @import("utils.zig");
 const grid_width = 50;
 const grid_height = 50;
 
-fn init(grid: *[grid_width * grid_height]bool) void {
-    // initialize with glider pattern
+fn set(grid: *[grid_width * grid_height]bool, x: usize, y: usize) void {
+    if (x < grid_width and y < grid_height)
+        grid[x * grid_height + y] = true;
+}
+
+fn clearGrid(grid: *[grid_width * grid_height]bool) void {
+    @memset(grid, false);
+}
+
+fn loadGlider(grid: *[grid_width * grid_height]bool) void {
+    clearGrid(grid);
+    // Glider pattern - 3x3 - placed at offset (1,1)
     grid[1 * grid_height + 2] = true;
     grid[2 * grid_height + 3] = true;
     grid[3 * grid_height + 1] = true;
     grid[3 * grid_height + 2] = true;
     grid[3 * grid_height + 3] = true;
+}
+
+fn loadGliderGun(grid: *[grid_width * grid_height]bool) void {
+    // Gosper Glider Gun - 36x9 - placed at offset (1,1)
+    clearGrid(grid);
+    const ox = 1;
+    const oy = 1;
+    const cells = [_][2]usize{
+        .{ 24, 0 },
+        .{ 22, 1 },
+        .{ 24, 1 },
+        .{ 12, 2 },
+        .{ 13, 2 },
+        .{ 20, 2 },
+        .{ 21, 2 },
+        .{ 34, 2 },
+        .{ 35, 2 },
+        .{ 11, 3 },
+        .{ 15, 3 },
+        .{ 20, 3 },
+        .{ 21, 3 },
+        .{ 34, 3 },
+        .{ 35, 3 },
+        .{ 0, 4 },
+        .{ 1, 4 },
+        .{ 10, 4 },
+        .{ 16, 4 },
+        .{ 20, 4 },
+        .{ 21, 4 },
+        .{ 0, 5 },
+        .{ 1, 5 },
+        .{ 10, 5 },
+        .{ 14, 5 },
+        .{ 16, 5 },
+        .{ 17, 5 },
+        .{ 22, 5 },
+        .{ 24, 5 },
+        .{ 10, 6 },
+        .{ 16, 6 },
+        .{ 24, 6 },
+        .{ 11, 7 },
+        .{ 15, 7 },
+        .{ 12, 8 },
+        .{ 13, 8 },
+    };
+    for (cells) |c| set(grid, c[0] + ox, c[1] + oy);
+}
+
+fn loadPulsar(grid: *[grid_width * grid_height]bool) void {
+    // Pulsar (period 3) - 13x13 - centered in the grid
+    clearGrid(grid);
+    const ox = grid_width / 2 - 6;
+    const oy = grid_height / 2 - 6;
+    const cells = [_][2]usize{
+        .{ 2, 0 },  .{ 3, 0 },  .{ 4, 0 },  .{ 8, 0 },  .{ 9, 0 },  .{ 10, 0 },
+        .{ 0, 2 },  .{ 5, 2 },  .{ 7, 2 },  .{ 12, 2 }, .{ 0, 3 },  .{ 5, 3 },
+        .{ 7, 3 },  .{ 12, 3 }, .{ 0, 4 },  .{ 5, 4 },  .{ 7, 4 },  .{ 12, 4 },
+        .{ 2, 5 },  .{ 3, 5 },  .{ 4, 5 },  .{ 8, 5 },  .{ 9, 5 },  .{ 10, 5 },
+        .{ 2, 7 },  .{ 3, 7 },  .{ 4, 7 },  .{ 8, 7 },  .{ 9, 7 },  .{ 10, 7 },
+        .{ 0, 8 },  .{ 5, 8 },  .{ 7, 8 },  .{ 12, 8 }, .{ 0, 9 },  .{ 5, 9 },
+        .{ 7, 9 },  .{ 12, 9 }, .{ 0, 10 }, .{ 5, 10 }, .{ 7, 10 }, .{ 12, 10 },
+        .{ 2, 12 }, .{ 3, 12 }, .{ 4, 12 }, .{ 8, 12 }, .{ 9, 12 }, .{ 10, 12 },
+    };
+    for (cells) |c| set(grid, c[0] + ox, c[1] + oy);
 }
 
 fn calc(grid: *[grid_width * grid_height]bool) void {
@@ -76,9 +150,9 @@ pub fn gameOfLife(io: std.Io) bool {
         var time_step_ms: i64 = 100;
     };
     if (!S.initialized) {
-        init(&S.grid);
-        S.initialized = true;
+        loadGlider(&S.grid);
         S.last_update_time = std.Io.Clock.now(.real, io).toMilliseconds();
+        S.initialized = true;
     } else if (S.running) {
         const now = std.Io.Clock.now(.real, io).toMilliseconds();
         if (now - S.last_update_time >= S.time_step_ms) {
@@ -156,6 +230,22 @@ pub fn gameOfLife(io: std.Io) bool {
     var speed = @divTrunc(100, S.time_step_ms); // convert to 1-10 range for slider
     speedSlider(&speed);
     S.time_step_ms = @divTrunc(100, speed); // convert back to ms
+    // scene buttons
+    if (utils.btn(24, 24 + 30 + 24, 80, 30, "Glider")) {
+        loadGlider(&S.grid);
+        S.generation = 0;
+        S.running = true;
+    }
+    if (utils.btn(24, 24 + 30 + 24 + 30 + 24, 80, 30, "Glider Gun")) {
+        loadGliderGun(&S.grid);
+        S.generation = 0;
+        S.running = true;
+    }
+    if (utils.btn(24, 24 + 30 + 24 + 30 + 24 + 30 + 24, 80, 30, "Pulsar")) {
+        loadPulsar(&S.grid);
+        S.generation = 0;
+        S.running = true;
+    }
     // back button
     if (utils.backBtn()) {
         return true;
