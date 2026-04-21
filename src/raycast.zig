@@ -8,8 +8,8 @@ fn init_walls() []const []const rl.Vector2 {
     const S = struct {
         const seg0 = [_]rl.Vector2{ // a line segment
             .{ .x = 100, .y = 100 },
-            .{ .x = 300, .y = 100 },
-            .{ .x = 300, .y = 300 },
+            .{ .x = 200, .y = 100 },
+            .{ .x = 200, .y = 200 },
         };
         const seg1 = [_]rl.Vector2{ // a triangle
             .{ .x = 500, .y = 200 },
@@ -18,8 +18,8 @@ fn init_walls() []const []const rl.Vector2 {
             .{ .x = 500, .y = 200 },
         };
         const seg2 = blk: { // a circle approximated by a 10-sided polygon
-            const cx = 700.0;
-            const cy = 700.0;
+            const cx = 500.0;
+            const cy = 500.0;
             const r = 80.0;
             const n = 10;
             var pts: [n + 1]rl.Vector2 = undefined;
@@ -44,6 +44,48 @@ fn init_walls() []const []const rl.Vector2 {
         };
     };
     return S.walls;
+}
+
+fn circleSegmentCollide(pos: rl.Vector2, radius: f32, p1: rl.Vector2, p2: rl.Vector2) bool {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len_sq = dx * dx + dy * dy;
+    if (len_sq == 0) return false;
+    const t = std.math.clamp(((pos.x - p1.x) * dx + (pos.y - p1.y) * dy) / len_sq, 0.0, 1.0);
+    const closest = rl.Vector2{ .x = p1.x + t * dx, .y = p1.y + t * dy };
+    const dist_sq = (pos.x - closest.x) * (pos.x - closest.x) + (pos.y - closest.y) * (pos.y - closest.y);
+    return dist_sq < radius * radius;
+}
+
+fn tryMove(pos: rl.Vector2, delta: rl.Vector2, walls: []const []const rl.Vector2, radius: f32) rl.Vector2 {
+    const w = ut.i32tof32(rl.getRenderWidth());
+    const h = ut.i32tof32(rl.getRenderHeight());
+
+    // try full move, then axis-separated fallbacks for sliding.
+    const candidates = [3]rl.Vector2{
+        .{ .x = pos.x + delta.x, .y = pos.y + delta.y },
+        .{ .x = pos.x + delta.x, .y = pos.y },
+        .{ .x = pos.x, .y = pos.y + delta.y },
+    };
+    for (candidates) |candidate| {
+        // screen bounds
+        const clamped = rl.Vector2{
+            .x = std.math.clamp(candidate.x, radius, w - radius),
+            .y = std.math.clamp(candidate.y, radius, h - radius),
+        };
+        // wall check
+        var blocked = false;
+        outer: for (walls) |wall| {
+            for (0..wall.len - 1) |j| {
+                if (circleSegmentCollide(clamped, radius, wall[j], wall[j + 1])) {
+                    blocked = true;
+                    break :outer;
+                }
+            }
+        }
+        if (!blocked) return clamped;
+    }
+    return pos; // fully stuck
 }
 
 pub fn raycast(_: std.Io) bool {
@@ -118,7 +160,8 @@ pub fn raycast(_: std.Io) bool {
         }
     }
     // draw location
-    rl.drawCircleV(S.pos, 5, .red);
+    const player_radius = 5;
+    rl.drawCircleV(S.pos, player_radius, .red);
     // controls
     var x: i32 = ut.button_spacing + ut.button_height + ut.button_spacing;
     var y: i32 = ut.button_spacing;
@@ -145,13 +188,13 @@ pub fn raycast(_: std.Io) bool {
         S.right_btn = false; // reset button state until next frame
     }
     if (rl.isKeyDown(rl.KeyboardKey.up) or S.up_btn) {
-        S.pos.x += std.math.cos(S.angle) * 2;
-        S.pos.y += std.math.sin(S.angle) * 2;
-        S.up_btn = false; // reset button state until next frame
+        const delta = rl.Vector2{ .x = std.math.cos(S.angle) * 2, .y = std.math.sin(S.angle) * 2 };
+        S.pos = tryMove(S.pos, delta, S.walls, player_radius);
+        S.up_btn = false;
     } else if (rl.isKeyDown(rl.KeyboardKey.down) or S.down_btn) {
-        S.pos.x -= std.math.cos(S.angle) * 2;
-        S.pos.y -= std.math.sin(S.angle) * 2;
-        S.down_btn = false; // reset button state until next frame
+        const delta = rl.Vector2{ .x = -std.math.cos(S.angle) * 2, .y = -std.math.sin(S.angle) * 2 };
+        S.pos = tryMove(S.pos, delta, S.walls, player_radius);
+        S.down_btn = false;
     }
     // back button
     if (ut.backBtn()) {
