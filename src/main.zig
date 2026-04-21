@@ -6,6 +6,7 @@ const ut = @import("utils.zig");
 const fractal = @import("fractal.zig");
 const life = @import("life.zig");
 const raycast = @import("raycast.zig");
+const wfc = @import("wfc.zig");
 
 pub fn main(init: std.process.Init) !void {
     // Initialization
@@ -20,7 +21,7 @@ pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    var demo: ?*const fn (io: std.Io) bool = null; // default demo to run on startup
+    var demo: ?*const fn (io: std.Io) bool = wfc.wfc; // default demo to run on startup
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
@@ -40,7 +41,7 @@ pub fn main(init: std.process.Init) !void {
 
         const x = ut.button_spacing;
         var y: i32 = ut.button_spacing;
-        const btn_width = 120;
+        const btn_width = 150;
         if (ut.btn(x, y, btn_width, ut.button_height, "Fractal"))
             demo = fractal.fractal;
         y += ut.button_height + ut.button_spacing;
@@ -49,6 +50,9 @@ pub fn main(init: std.process.Init) !void {
         y += ut.button_height + ut.button_spacing;
         if (ut.btn(x, y, btn_width, ut.button_height, "Raycast"))
             demo = raycast.raycast;
+        y += ut.button_height + ut.button_spacing;
+        if (ut.btn(x, y, btn_width, ut.button_height, "Wave Function Collapse"))
+            demo = wfc.wfc;
 
         ut.drawTextCentered("raylib-fun", 20, .light_gray);
         //----------------------------------------------------------------------------------

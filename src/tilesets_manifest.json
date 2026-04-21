@@ -1,0 +1,148 @@
+{
+  "Castle": {
+    "tiles": [
+      "bridge.png",
+      "ground.png",
+      "river.png",
+      "riverturn.png",
+      "road.png",
+      "roadturn.png",
+      "t.png",
+      "tower.png",
+      "wall.png",
+      "wallriver.png",
+      "wallroad.png"
+    ],
+    "should_rotate": true,
+    "pixel_tolerance": 0
+  },
+  "Circles": {
+    "tiles": [
+      "b.png",
+      "b_half.png",
+      "b_i.png",
+      "b_quarter.png",
+      "w.png",
+      "w_half.png",
+      "w_i.png",
+      "w_quarter.png"
+    ],
+    "should_rotate": true,
+    "pixel_tolerance": 5
+  },
+  "Circuit": {
+    "tiles": [
+      "bridge.png",
+      "component.png",
+      "connection.png",
+      "corner.png",
+      "dskew.png",
+      "skew.png",
+      "substrate.png",
+      "t.png",
+      "track.png",
+      "transition.png",
+      "turn.png",
+      "viad.png",
+      "vias.png",
+      "wire.png"
+    ],
+    "should_rotate": true,
+    "pixel_tolerance": 0
+  },
+  "FloorPlan": {
+    "tiles": [
+      "div.png",
+      "divt.png",
+      "divturn.png",
+      "door.png",
+      "empty.png",
+      "floor.png",
+      "glass.png",
+      "halfglass.png",
+      "in.png",
+      "out.png",
+      "stairs.png",
+      "table.png",
+      "vent.png",
+      "w.png",
+      "wall.png",
+      "walldiv.png",
+      "window.png"
+    ],
+    "should_rotate": true,
+    "pixel_tolerance": 0
+  },
+  "Knots": {
+    "tiles": [
+      "corner.png",
+      "cross.png",
+      "empty.png",
+      "line.png",
+      "t.png"
+    ],
+    "should_rotate": true,
+    "pixel_tolerance": 0
+  },
+  "Rooms": {
+    "tiles": [
+      "bend.png",
+      "corner.png",
+      "corridor.png",
+      "door.png",
+      "empty.png",
+      "side.png",
+      "t.png",
+      "turn.png",
+      "wall.png"
+    ],
+    "should_rotate": true,
+    "pixel_tolerance": 0
+  },
+  "Summer": {
+    "tiles": [
+      "cliff 0.png",
+      "cliff 1.png",
+      "cliff 2.png",
+      "cliff 3.png",
+      "cliffcorner 0.png",
+      "cliffcorner 1.png",
+      "cliffcorner 2.png",
+      "cliffcorner 3.png",
+      "cliffturn 0.png",
+      "cliffturn 1.png",
+      "cliffturn 2.png",
+      "cliffturn 3.png",
+      "grass 0.png",
+      "grasscorner 0.png",
+      "grasscorner 1.png",
+      "grasscorner 2.png",
+      "grasscorner 3.png",
+      "road 0.png",
+      "road 1.png",
+      "road 2.png",
+      "road 3.png",
+      "roadturn 0.png",
+      "roadturn 1.png",
+      "roadturn 2.png",
+      "roadturn 3.png",
+      "water_a 0.png",
+      "water_b 0.png",
+      "water_c 0.png",
+      "watercorner 0.png",
+      "watercorner 1.png",
+      "watercorner 2.png",
+      "watercorner 3.png",
+      "waterside 0.png",
+      "waterside 1.png",
+      "waterside 2.png",
+      "waterside 3.png",
+      "waterturn 0.png",
+      "waterturn 1.png",
+      "waterturn 2.png",
+      "waterturn 3.png"
+    ],
+    "should_rotate": false,
+    "pixel_tolerance": 180
+  }
+}

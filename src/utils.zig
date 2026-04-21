@@ -10,6 +10,14 @@ pub fn usizetof32(value: usize) f32 {
     return @as(f32, @floatFromInt(value));
 }
 
+pub fn i32tousize(value: i32) usize {
+    return @as(usize, @intCast(value));
+}
+
+pub fn usizetoi32(value: usize) i32 {
+    return @as(i32, @intCast(value));
+}
+
 /// `rl.getColor` only accepts a `u32`. Performing `@intCast` on the return value
 /// of `rg.getStyle` invokes checked undefined behavior from Zig when passed to
 /// `rl.getColor`, hence the custom implementation here...
