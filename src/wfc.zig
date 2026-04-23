@@ -115,6 +115,61 @@ fn tilesetSelectButtons(manifest: *const Manifest, active: *i32) void {
     _ = rg.toggleGroup(r, tilesets_str, active);
 }
 
+/// Play/pause and reset buttons at top-right. Returns true if reset was clicked.
+fn controlButtons(paused: *bool) bool {
+    const bh = ut.button_height;
+    const bs = ut.button_spacing;
+    const w = rl.getRenderWidth();
+    const reset_x = w - bs - bh;
+    const play_x = reset_x - bs - bh;
+    const y_f = ut.i32tof32(bs);
+    const bh_f = ut.i32tof32(bh);
+    const play_label: [:0]const u8 = if (paused.*) ">" else "||";
+    if (rg.button(rl.Rectangle{ .x = ut.i32tof32(play_x), .y = y_f, .width = bh_f, .height = bh_f }, play_label)) {
+        paused.* = !paused.*;
+    }
+    return rg.button(rl.Rectangle{ .x = ut.i32tof32(reset_x), .y = y_f, .width = bh_f, .height = bh_f }, "R");
+}
+
+/// Returns the tile index under the mouse in the canvas, or null if outside.
+fn canvasHitTest(canvas: *Canvas, textures: *Textures) ?usize {
+    if (canvas.tiles.items.len == 0 or canvas.texture_size == 0) return null;
+    const offset_x = ut.button_spacing;
+    const offset_y = ut.button_spacing * 3 + ut.button_height + previewTotalHeight(textures);
+    const mouse = rl.getMousePosition();
+    const mx = @as(i32, @intFromFloat(mouse.x));
+    const my = @as(i32, @intFromFloat(mouse.y));
+    const rel_x = mx - offset_x;
+    const rel_y = my - offset_y;
+    if (rel_x < 0 or rel_y < 0) return null;
+    const tx = @divTrunc(rel_x, canvas.texture_size);
+    const ty = @divTrunc(rel_y, canvas.texture_size);
+    if (tx >= canvas.width or ty >= canvas.height) return null;
+    return ut.i32tousize(ty * canvas.width + tx);
+}
+
+/// Returns the index of the preview texture under the mouse, or null if none.
+fn previewHitTest(textures: *Textures) ?usize {
+    const max_x = rl.getRenderWidth() - ut.button_spacing;
+    var x: i32 = ut.button_spacing;
+    var y: i32 = ut.button_spacing * 2 + ut.button_height;
+    var row_h: i32 = 0;
+    const mouse = rl.getMousePosition();
+    for (textures.items, 0..) |tex_info, i| {
+        const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > ut.button_spacing) {
+            x = ut.button_spacing;
+            y += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
+        const bounds = rl.Rectangle{ .x = ut.i32tof32(x - 1), .y = ut.i32tof32(y - 1), .width = ut.i32tof32(ps + 2), .height = ut.i32tof32(ps + 2) };
+        if (rl.checkCollisionPointRec(mouse, bounds)) return i;
+        x += ps + 3;
+    }
+    return null;
+}
+
 fn loadTexture(path: [:0]const u8) !rl.Texture {
     if (rl.loadImage(path)) |img| {
         defer rl.unloadImage(img);
@@ -319,7 +374,8 @@ fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayLis
     }
     // get max drawing area
     const draw_width = rl.getRenderWidth() - ut.button_spacing * 2;
-    const draw_height = rl.getRenderHeight() - (ut.button_spacing * 4 + ut.button_height + canvas.texture_size);
+    const preview_h = previewTotalHeight(textures);
+    const draw_height = rl.getRenderHeight() - (ut.button_spacing * 4 + ut.button_height + preview_h);
     // calculate how many tiles can fit in the drawing area
     canvas.width = @min(20, @divTrunc(draw_width, canvas.texture_size));
     canvas.height = @min(20, @divTrunc(draw_height, canvas.texture_size));
@@ -340,24 +396,28 @@ fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayLis
     recomputeAllPossibilities(canvas, textures, active_images);
 }
 
-fn canvasDraw(canvas: *Canvas, textures: *Textures) void {
+fn canvasDraw(canvas: *Canvas, textures: *Textures, selected_tile: i32) void {
     const offset_x = ut.button_spacing;
-    const offset_y = ut.button_spacing * 3 + ut.button_height + canvas.texture_size;
+    const offset_y = ut.button_spacing * 3 + ut.button_height + previewTotalHeight(textures);
     for (0..ut.i32tousize(canvas.height)) |y| {
         for (0..ut.i32tousize(canvas.width)) |x| {
-            const tile = canvas.tiles.items[y * ut.i32tousize(canvas.width) + x];
+            const tile_idx = y * ut.i32tousize(canvas.width) + x;
+            const tile = canvas.tiles.items[tile_idx];
             const tex_x = offset_x + ut.usizetoi32(x) * canvas.texture_size;
             const tex_y = offset_y + ut.usizetoi32(y) * canvas.texture_size;
-            if (tile.texture_index == -2) {
+            const is_selected = selected_tile >= 0 and tile_idx == ut.i32tousize(selected_tile);
+            if (is_selected) {
+                rl.drawRectangle(tex_x, tex_y, canvas.texture_size, canvas.texture_size, .pink);
+                rl.drawRectangleLinesEx(rl.Rectangle{ .x = ut.i32tof32(tex_x), .y = ut.i32tof32(tex_y), .width = ut.i32tof32(canvas.texture_size), .height = ut.i32tof32(canvas.texture_size) }, 2, .magenta);
+            } else if (tile.texture_index == -2) {
                 rl.drawRectangle(tex_x, tex_y, canvas.texture_size, canvas.texture_size, .pink);
                 rl.drawRectangleLinesEx(rl.Rectangle{ .x = ut.i32tof32(tex_x), .y = ut.i32tof32(tex_y), .width = ut.i32tof32(canvas.texture_size), .height = ut.i32tof32(canvas.texture_size) }, 1, .red);
             } else if (tile.texture_index == -1) {
                 rl.drawRectangle(tex_x, tex_y, canvas.texture_size, canvas.texture_size, .dark_gray);
                 rl.drawRectangleLinesEx(rl.Rectangle{ .x = ut.i32tof32(tex_x), .y = ut.i32tof32(tex_y), .width = ut.i32tof32(canvas.texture_size), .height = ut.i32tof32(canvas.texture_size) }, 1, .light_gray);
                 // draw possibility count
-                const ti = y * ut.i32tousize(canvas.width) + x;
-                if (ti < canvas.possibilities.len) {
-                    const poss = canvas.possibilities[ti];
+                if (tile_idx < canvas.possibilities.len) {
+                    const poss = canvas.possibilities[tile_idx];
                     if (poss >= 0) {
                         var buf: [8]u8 = undefined;
                         const text: [:0]const u8 = std.fmt.bufPrintZ(&buf, "{d}", .{poss}) catch "?";
@@ -389,11 +449,40 @@ fn previewSize(tex: rl.Texture) i32 {
     return @max(preview_tile_size, tex.width);
 }
 
-fn drawImages(textures: *Textures, active_images: *std.ArrayList(bool)) void {
+/// Total pixel height of the preview strip, accounting for row wrapping.
+fn previewTotalHeight(textures: *Textures) i32 {
+    if (textures.items.len == 0) return 0;
+    const max_x = rl.getRenderWidth() - ut.button_spacing;
     var x: i32 = ut.button_spacing;
-    const y = ut.button_spacing * 2 + ut.button_height;
+    var row_h: i32 = 0;
+    var total_h: i32 = 0;
+    for (textures.items) |tex_info| {
+        const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > ut.button_spacing) {
+            x = ut.button_spacing;
+            total_h += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
+        x += ps + 3;
+    }
+    total_h += row_h;
+    return total_h;
+}
+
+fn drawImages(textures: *Textures, active_images: *std.ArrayList(bool), pick_mode: bool) void {
+    const max_x = rl.getRenderWidth() - ut.button_spacing;
+    var x: i32 = ut.button_spacing;
+    var y: i32 = ut.button_spacing * 2 + ut.button_height;
+    var row_h: i32 = 0;
     for (textures.items, 0..) |tex_info, i| {
         const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > ut.button_spacing) {
+            x = ut.button_spacing;
+            y += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
         const psf = ut.i32tof32(ps);
         const srcf = ut.i32tof32(tex_info.texture.width);
         rl.drawTexturePro(
@@ -408,15 +497,27 @@ fn drawImages(textures: *Textures, active_images: *std.ArrayList(bool)) void {
             const bounds = rl.Rectangle{ .x = ut.i32tof32(x), .y = ut.i32tof32(y), .width = psf, .height = psf };
             rl.drawRectangleLinesEx(bounds, 2, .sky_blue);
         }
+        if (pick_mode) {
+            const bounds = rl.Rectangle{ .x = ut.i32tof32(x - 2), .y = ut.i32tof32(y - 2), .width = psf + 4.0, .height = psf + 4.0 };
+            rl.drawRectangleLinesEx(bounds, 2, .pink);
+        }
         x += ps + 3;
     }
 }
 
 fn highlightImage(textures: *Textures) void {
+    const max_x = rl.getRenderWidth() - ut.button_spacing;
     var x: i32 = ut.button_spacing;
-    const y = ut.button_spacing * 2 + ut.button_height;
+    var y: i32 = ut.button_spacing * 2 + ut.button_height;
+    var row_h: i32 = 0;
     for (textures.items) |tex_info| {
         const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > ut.button_spacing) {
+            x = ut.button_spacing;
+            y += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
         const bounds = rl.Rectangle{ .x = ut.i32tof32(x - 1), .y = ut.i32tof32(y - 1), .width = ut.i32tof32(ps + 2), .height = ut.i32tof32(ps + 2) };
         if (rl.checkCollisionPointRec(rl.getMousePosition(), bounds)) {
             rl.drawRectangleLinesEx(bounds, 2, .yellow);
@@ -426,10 +527,18 @@ fn highlightImage(textures: *Textures) void {
 }
 
 fn selectImage(textures: *Textures, active_images: *std.ArrayList(bool)) void {
+    const max_x = rl.getRenderWidth() - ut.button_spacing;
     var x: i32 = ut.button_spacing;
-    const y = ut.button_spacing * 2 + ut.button_height;
+    var y: i32 = ut.button_spacing * 2 + ut.button_height;
+    var row_h: i32 = 0;
     for (textures.items, 0..) |tex_info, i| {
         const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > ut.button_spacing) {
+            x = ut.button_spacing;
+            y += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
         const bounds = rl.Rectangle{ .x = ut.i32tof32(x - 1), .y = ut.i32tof32(y - 1), .width = ut.i32tof32(ps + 2), .height = ut.i32tof32(ps + 2) };
         if (rl.isMouseButtonReleased(rl.MouseButton.left) and rl.checkCollisionPointRec(rl.getMousePosition(), bounds)) {
             active_images.items[i] = !active_images.items[i];
@@ -728,6 +837,8 @@ pub fn wfc(io: std.Io) bool {
         var time_step_ms: i64 = 10;
         var last_update_time: i64 = 0;
         var rnd: std.Random = undefined;
+        var paused: bool = false;
+        var selected_tile: i32 = -1; // >= 0 means pick mode: user is manually choosing a texture for this tile
     };
     if (!S.initialised) {
         S.texture_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -749,9 +860,9 @@ pub fn wfc(io: std.Io) bool {
         S.rnd = prng.random();
         S.initialised = true;
     }
-    // procedurely fill canvas with WFC algorithm and redraw at fixed time intervals
+    // advance WFC only when playing and not in pick mode
     const now = std.Io.Clock.now(.real, io).toMilliseconds();
-    if (now - S.last_update_time >= S.time_step_ms) {
+    if (!S.paused and S.selected_tile < 0 and now - S.last_update_time >= S.time_step_ms) {
         calc(&S.canvas, &S.history, &S.textures, &S.active_images, &S.rnd);
         S.last_update_time = now;
     }
@@ -767,6 +878,7 @@ pub fn wfc(io: std.Io) bool {
         const prev_active = S.active_tileset;
         tilesetSelectButtons(manifest, &S.active_tileset);
         if (prev_active != S.active_tileset) {
+            S.selected_tile = -1;
             if (!tilesetLoadImages(manifest, S.active_tileset, &S.textures, &S.active_images, &S.canvas, &S.texture_arena)) {
                 S.err = "Failed to load tileset images";
             } else {
@@ -776,25 +888,55 @@ pub fn wfc(io: std.Io) bool {
                 };
             }
         }
-        drawImages(&S.textures, &S.active_images);
+        // Control buttons: play/pause and reset
+        if (controlButtons(&S.paused)) {
+            S.selected_tile = -1;
+            freeHistory(&S.history);
+            canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
+                S.err = @errorName(err);
+            };
+        }
+        drawImages(&S.textures, &S.active_images, S.selected_tile >= 0);
         highlightImage(&S.textures);
-        var prev_active_images = S.active_images.clone(std.heap.page_allocator) catch |err| {
-            S.err = @errorName(err);
-            return false;
-        };
-        defer prev_active_images.deinit(std.heap.page_allocator);
-        selectImage(&S.textures, &S.active_images);
-        for (S.active_images.items, 0..) |active, i| {
-            if (active != prev_active_images.items[i]) {
-                // image was toggled
-                freeHistory(&S.history);
-                canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
-                    S.err = @errorName(err);
-                };
-                break;
+        if (S.selected_tile >= 0) {
+            // Pick mode: left click places the hovered preview texture on the selected tile;
+            // clicking anywhere else cancels pick mode.
+            if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
+                if (previewHitTest(&S.textures)) |tex_idx| {
+                    const ti = ut.i32tousize(S.selected_tile);
+                    S.canvas.tiles.items[ti] = Tile{ .texture_index = ut.usizetoi32(tex_idx), .rotation = 0 };
+                    freeHistory(&S.history);
+                    recomputeAllPossibilities(&S.canvas, &S.textures, &S.active_images);
+                }
+                S.selected_tile = -1;
+            }
+        } else {
+            // Normal mode: toggle active images and detect canvas clicks.
+            var prev_active_images = S.active_images.clone(std.heap.page_allocator) catch |err| {
+                S.err = @errorName(err);
+                return false;
+            };
+            defer prev_active_images.deinit(std.heap.page_allocator);
+            selectImage(&S.textures, &S.active_images);
+            for (S.active_images.items, 0..) |active, i| {
+                if (active != prev_active_images.items[i]) {
+                    // image was toggled
+                    freeHistory(&S.history);
+                    canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
+                        S.err = @errorName(err);
+                    };
+                    break;
+                }
+            }
+            // Click on a canvas tile → enter pick mode and pause
+            if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
+                if (canvasHitTest(&S.canvas, &S.textures)) |ti| {
+                    S.selected_tile = ut.usizetoi32(ti);
+                    S.paused = true;
+                }
             }
         }
-        canvasDraw(&S.canvas, &S.textures);
+        canvasDraw(&S.canvas, &S.textures, S.selected_tile);
     }
     if (ut.backBtn()) {
         return true;
