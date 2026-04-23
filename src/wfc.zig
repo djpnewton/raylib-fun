@@ -10,26 +10,16 @@ const ut = @import("utils.zig");
 
 const TilesetEntry = struct {
     tiles: std.ArrayList([:0]const u8),
-    should_rotate: bool,
-    pixel_tolerance: u64,
+    symmetry: std.ArrayList(u8), // symmetry char per tile: 'X', 'I', '\\', 'T', 'L', 'F'
+    right_neighbors: std.ArrayList([4]u8), // [a_idx, a_rot, b_idx, b_rot]
+    below_neighbors: std.ArrayList([4]u8),
 };
 
 const Manifest = std.StringHashMap(TilesetEntry);
 
-// Per-pixel RGB data for one edge: len = edge_pixels * 3
-const EdgeId = []const u8;
-
-const TextureId = struct {
-    top: EdgeId,
-    right: EdgeId,
-    bottom: EdgeId,
-    left: EdgeId,
-    edge_pixels: usize, // number of pixels per edge (= texture width)
-};
-
 const TextureInfo = struct {
-    ids: [4]TextureId, // ids[r] = TextureId for rotation r (0=0°, 1=90°CW, 2=180°, 3=270°CW)
     texture: rl.Texture,
+    max_rotations: u8, // 1, 2, or 4
 };
 
 const Textures = std.ArrayList(TextureInfo);
@@ -44,8 +34,8 @@ const Canvas = struct {
     width: i32,
     height: i32,
     texture_size: i32,
-    pixel_tolerance: u64,
-    should_rotate: bool,
+    right_adj: []u32, // sorted owned slice of adjKey values for horizontal adjacency
+    below_adj: []u32, // sorted owned slice of adjKey values for vertical adjacency
 };
 
 const ValidTile = struct { index: usize, rotation: u2 };
@@ -72,18 +62,47 @@ fn readManifest(allocator: std.mem.Allocator) !Manifest {
     while (it.next()) |entry| {
         const key = try allocator.dupeZ(u8, entry.key_ptr.*);
         const obj = entry.value_ptr.object;
-        var list: std.ArrayList([:0]const u8) = .empty;
-        errdefer list.deinit(allocator);
+
+        var tile_list: std.ArrayList([:0]const u8) = .empty;
+        errdefer tile_list.deinit(allocator);
+        var sym_list: std.ArrayList(u8) = .empty;
+        errdefer sym_list.deinit(allocator);
+        var rn_list: std.ArrayList([4]u8) = .empty;
+        errdefer rn_list.deinit(allocator);
+        var bn_list: std.ArrayList([4]u8) = .empty;
+        errdefer bn_list.deinit(allocator);
+
         for (obj.get("tiles").?.array.items) |item| {
-            const path = try std.fmt.allocPrintSentinel(allocator, "tilesets/{s}/{s}", .{ entry.key_ptr.*, item.string }, 0);
-            try list.append(allocator, path);
+            const tile_obj = item.object;
+            const path = try allocator.dupeZ(u8, tile_obj.get("path").?.string);
+            try tile_list.append(allocator, path);
+            const sym_str = tile_obj.get("symmetry").?.string;
+            try sym_list.append(allocator, sym_str[0]);
         }
-        const should_rotate = obj.get("should_rotate").?.bool;
-        const pixel_tolerance: u64 = @intCast(obj.get("pixel_tolerance").?.integer);
+        for (obj.get("right_neighbors").?.array.items) |nb| {
+            const arr = nb.array.items;
+            try rn_list.append(allocator, .{
+                @intCast(arr[0].integer),
+                @intCast(arr[1].integer),
+                @intCast(arr[2].integer),
+                @intCast(arr[3].integer),
+            });
+        }
+        for (obj.get("below_neighbors").?.array.items) |nb| {
+            const arr = nb.array.items;
+            try bn_list.append(allocator, .{
+                @intCast(arr[0].integer),
+                @intCast(arr[1].integer),
+                @intCast(arr[2].integer),
+                @intCast(arr[3].integer),
+            });
+        }
+
         try map.put(key, TilesetEntry{
-            .tiles = list,
-            .should_rotate = should_rotate,
-            .pixel_tolerance = pixel_tolerance,
+            .tiles = tile_list,
+            .symmetry = sym_list,
+            .right_neighbors = rn_list,
+            .below_neighbors = bn_list,
         });
     }
     return map;
@@ -186,118 +205,17 @@ fn loadTexture(path: [:0]const u8) !rl.Texture {
     }
 }
 
-/// Store the RGB values for each pixel along one edge. `start` and `step` are in pixel units.
-fn calcEdge(allocator: std.mem.Allocator, data: [*]const u8, start: usize, step: usize, len: usize) !EdgeId {
-    const buf = try allocator.alloc(u8, len * 3);
-    for (0..len) |i| {
-        const base = (start + i * step) * 4;
-        buf[i * 3 + 0] = data[base + 0];
-        buf[i * 3 + 1] = data[base + 1];
-        buf[i * 3 + 2] = data[base + 2];
-    }
-    return buf;
-}
-
-fn calcTextureId(allocator: std.mem.Allocator, tex: rl.Texture, filepath: [:0]const u8) !TextureId {
-    const w = @as(usize, @intCast(tex.width));
-    std.debug.assert(w == tex.height); // all our textures are square
-    var img = try rl.loadImageFromTexture(tex);
-    defer rl.unloadImage(img);
-    // Normalise to RGBA8 so we can always assume 4 bytes per pixel.
-    img.setFormat(.uncompressed_r8g8b8a8);
-    const data = @as([*]const u8, @ptrCast(img.data));
-
-    const top = try calcEdge(allocator, data, 0, 1, w);
-    errdefer allocator.free(top);
-    const bottom = try calcEdge(allocator, data, (w - 1) * w, 1, w);
-    errdefer allocator.free(bottom);
-    const left = try calcEdge(allocator, data, 0, w, w);
-    errdefer allocator.free(left);
-    const right = try calcEdge(allocator, data, w - 1, w, w);
-
-    // print texture id for debugging
-    std.debug.print("Texture ID {s}:\n", .{filepath});
-    std.debug.print("  width = {d}, height = {d}\n", .{ tex.width, tex.height });
-    std.debug.print("  format = {any}\n", .{tex.format});
-    std.debug.print("  top   [0..10] = {any}\n", .{top[0..@min(10, top.len)]});
-    std.debug.print("  right [0..10] = {any}\n", .{right[0..@min(10, right.len)]});
-    std.debug.print("  bottom[0..10] = {any}\n", .{bottom[0..@min(10, bottom.len)]});
-    std.debug.print("  left  [0..10] = {any}\n", .{left[0..@min(10, left.len)]});
-
-    return TextureId{
-        .top = top,
-        .bottom = bottom,
-        .left = left,
-        .right = right,
-        .edge_pixels = w,
-    };
-}
-
-fn reverseEdge(allocator: std.mem.Allocator, edge: EdgeId) !EdgeId {
-    const n = edge.len / 3;
-    const buf = try allocator.alloc(u8, edge.len);
-    for (0..n) |i| {
-        buf[i * 3 + 0] = edge[(n - 1 - i) * 3 + 0];
-        buf[i * 3 + 1] = edge[(n - 1 - i) * 3 + 1];
-        buf[i * 3 + 2] = edge[(n - 1 - i) * 3 + 2];
-    }
-    return buf;
-}
-
-/// Compute all 4 rotations from a base TextureId (rotation 0).
-///
-/// Edge storage: top/bottom are L→R (pixel 0 = left side), left/right are T→B (pixel 0 = top).
-/// Matching convention: A.right[i] == B.left[i] and A.bottom[i] == B.top[i].
-///
-/// 90° CW:  top=rev(left), right=top,         bottom=rev(right), left=bottom
-/// 180°:    top=rev(bot),  right=rev(left),    bottom=rev(top),   left=rev(right)
-/// 270° CW: top=right,     right=rev(bottom),  bottom=left,       left=rev(top)
-fn calcAllRotations(allocator: std.mem.Allocator, base: TextureId) ![4]TextureId {
-    const px = base.edge_pixels;
-
-    // rot1 (90° CW): top=rev(left), right=top, bottom=rev(right), left=bottom
-    const r1_top = try reverseEdge(allocator, base.left);
-    errdefer allocator.free(r1_top);
-    const r1_right = try allocator.dupe(u8, base.top);
-    errdefer allocator.free(r1_right);
-    const r1_bottom = try reverseEdge(allocator, base.right);
-    errdefer allocator.free(r1_bottom);
-    const r1_left = try allocator.dupe(u8, base.bottom);
-    errdefer allocator.free(r1_left);
-
-    // rot2 (180°): top=rev(bottom), right=rev(left), bottom=rev(top), left=rev(right)
-    const r2_top = try reverseEdge(allocator, base.bottom);
-    errdefer allocator.free(r2_top);
-    const r2_right = try reverseEdge(allocator, base.left);
-    errdefer allocator.free(r2_right);
-    const r2_bottom = try reverseEdge(allocator, base.top);
-    errdefer allocator.free(r2_bottom);
-    const r2_left = try reverseEdge(allocator, base.right);
-    errdefer allocator.free(r2_left);
-
-    // rot3 (270° CW): top=right, right=rev(bottom), bottom=left, left=rev(top)
-    const r3_top = try allocator.dupe(u8, base.right);
-    errdefer allocator.free(r3_top);
-    const r3_right = try reverseEdge(allocator, base.bottom);
-    errdefer allocator.free(r3_right);
-    const r3_bottom = try allocator.dupe(u8, base.left);
-    errdefer allocator.free(r3_bottom);
-    const r3_left = try reverseEdge(allocator, base.top);
-
-    return [4]TextureId{
-        base,
-        .{ .top = r1_top, .right = r1_right, .bottom = r1_bottom, .left = r1_left, .edge_pixels = px },
-        .{ .top = r2_top, .right = r2_right, .bottom = r2_bottom, .left = r2_left, .edge_pixels = px },
-        .{ .top = r3_top, .right = r3_right, .bottom = r3_bottom, .left = r3_left, .edge_pixels = px },
-    };
-}
-
 fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures, active_images: *std.ArrayList(bool), canvas: *Canvas, arena: *std.heap.ArenaAllocator) bool {
-    // Unload GPU textures, then free all edge/list memory by resetting the arena.
+    // Unload GPU textures, then free texture/active_images memory by resetting the arena.
     for (textures.items) |tex_info| rl.unloadTexture(tex_info.texture);
     _ = arena.reset(.free_all);
     textures.* = .empty;
     active_images.* = .empty;
+    // Free old adjacency slices.
+    if (canvas.right_adj.len > 0) std.heap.page_allocator.free(canvas.right_adj);
+    if (canvas.below_adj.len > 0) std.heap.page_allocator.free(canvas.below_adj);
+    canvas.right_adj = &.{};
+    canvas.below_adj = &.{};
     const alloc = arena.allocator();
     var index: i32 = 0;
     var it = manifest.keyIterator();
@@ -305,9 +223,7 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
         if (index == active) {
             const tileset = key.*;
             if (manifest.get(tileset)) |entry| {
-                canvas.pixel_tolerance = entry.pixel_tolerance;
-                canvas.should_rotate = entry.should_rotate;
-                for (entry.tiles.items) |path| {
+                for (entry.tiles.items, 0..) |path, i| {
                     const tex = loadTexture(path) catch |err| {
                         std.debug.print("Failed to load texture for tileset image '{s}': {any}\n", .{ path, err });
                         for (textures.items) |ti| rl.unloadTexture(ti.texture);
@@ -316,25 +232,13 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
                         active_images.* = .empty;
                         return false;
                     };
-                    const base_id = calcTextureId(alloc, tex, path) catch |err| {
-                        std.debug.print("Failed to calculate texture ID for '{s}': {any}\n", .{ path, err });
-                        rl.unloadTexture(tex);
-                        for (textures.items) |ti| rl.unloadTexture(ti.texture);
-                        _ = arena.reset(.free_all);
-                        textures.* = .empty;
-                        active_images.* = .empty;
-                        return false;
+                    const sym: u8 = if (i < entry.symmetry.items.len) entry.symmetry.items[i] else 'F';
+                    const max_rot: u8 = switch (sym) {
+                        'X' => 1,
+                        'I', '\\' => 2,
+                        else => 4, // T, L, F
                     };
-                    const all_ids = calcAllRotations(alloc, base_id) catch |err| {
-                        std.debug.print("Failed to compute rotations for '{s}': {any}\n", .{ path, err });
-                        rl.unloadTexture(tex);
-                        for (textures.items) |ti| rl.unloadTexture(ti.texture);
-                        _ = arena.reset(.free_all);
-                        textures.* = .empty;
-                        active_images.* = .empty;
-                        return false;
-                    };
-                    textures.append(alloc, .{ .ids = all_ids, .texture = tex }) catch |err| {
+                    textures.append(alloc, .{ .texture = tex, .max_rotations = max_rot }) catch |err| {
                         std.debug.print("Failed to append texture for tileset image '{s}': {any}\n", .{ path, err });
                         rl.unloadTexture(tex);
                         for (textures.items) |ti| rl.unloadTexture(ti.texture);
@@ -352,6 +256,29 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
                         return false;
                     };
                 }
+                // Build sorted adjacency slices for O(log n) lookup.
+                var right_list: std.ArrayList(u32) = .empty;
+                defer right_list.deinit(std.heap.page_allocator);
+                var below_list: std.ArrayList(u32) = .empty;
+                defer below_list.deinit(std.heap.page_allocator);
+                for (entry.right_neighbors.items) |nb| {
+                    right_list.append(std.heap.page_allocator, adjKey(nb[0], @intCast(nb[1]), nb[2], @intCast(nb[3]))) catch {};
+                }
+                for (entry.below_neighbors.items) |nb| {
+                    below_list.append(std.heap.page_allocator, adjKey(nb[0], @intCast(nb[1]), nb[2], @intCast(nb[3]))) catch {};
+                }
+                std.mem.sort(u32, right_list.items, {}, struct {
+                    fn lt(_: void, a: u32, b: u32) bool {
+                        return a < b;
+                    }
+                }.lt);
+                std.mem.sort(u32, below_list.items, {}, struct {
+                    fn lt(_: void, a: u32, b: u32) bool {
+                        return a < b;
+                    }
+                }.lt);
+                canvas.right_adj = right_list.toOwnedSlice(std.heap.page_allocator) catch &.{};
+                canvas.below_adj = below_list.toOwnedSlice(std.heap.page_allocator) catch &.{};
             } else {
                 std.debug.print("Failed to find tileset in manifest: {s}\n", .{tileset});
                 return false;
@@ -435,7 +362,7 @@ fn canvasDraw(canvas: *Canvas, textures: *Textures, selected_tile: i32) void {
                     rl.Rectangle{ .x = 0, .y = 0, .width = src_w, .height = src_w },
                     rl.Rectangle{ .x = cx, .y = cy, .width = fw, .height = fw },
                     rl.Vector2{ .x = fw / 2.0, .y = fw / 2.0 },
-                    @as(f32, @floatFromInt(tile.rotation)) * 90.0,
+                    @as(f32, @floatFromInt(tile.rotation)) * -90.0, // CCW, matching reference WFC rotation convention
                     .white,
                 );
             }
@@ -553,69 +480,57 @@ fn selectImage(textures: *Textures, active_images: *std.ArrayList(bool)) void {
 }
 
 /// Two edges match when every RGB channel of every pixel is within tolerance_per_pixel.
-fn edgeMatches(a: EdgeId, b: EdgeId, tolerance_per_pixel: u64) bool {
-    std.debug.assert(a.len == b.len);
-    const n = a.len / 3;
-    for (0..n) |i| {
-        const ar: u64 = a[i * 3 + 0];
-        const ag: u64 = a[i * 3 + 1];
-        const ab: u64 = a[i * 3 + 2];
-        const br: u64 = b[i * 3 + 0];
-        const bg: u64 = b[i * 3 + 1];
-        const bb: u64 = b[i * 3 + 2];
-        const dr = if (ar > br) ar - br else br - ar;
-        const dg = if (ag > bg) ag - bg else bg - ag;
-        const db = if (ab > bb) ab - bb else bb - ab;
-        if (dr > tolerance_per_pixel or dg > tolerance_per_pixel or db > tolerance_per_pixel) return false;
-    }
-    return true;
+fn adjKey(a_idx: usize, a_rot: u2, b_idx: usize, b_rot: u2) u32 {
+    return (@as(u32, @intCast(a_idx)) << 12) |
+        (@as(u32, a_rot) << 10) |
+        (@as(u32, @intCast(b_idx)) << 2) |
+        @as(u32, b_rot);
 }
 
-fn canPlaceTexture(canvas: *Canvas, tile_index: usize, textures: *Textures, texture_index: usize, rotation: u2) bool {
-    const tex_id = textures.items[texture_index].ids[rotation];
-    const tol = canvas.pixel_tolerance;
+fn adjContains(adj: []const u32, key: u32) bool {
+    var lo: usize = 0;
+    var hi: usize = adj.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (adj[mid] == key) return true;
+        if (adj[mid] < key) lo = mid + 1 else hi = mid;
+    }
+    return false;
+}
+
+fn canPlaceTexture(canvas: *Canvas, tile_index: usize, texture_index: usize, rotation: u2) bool {
     const x = ut.usizetoi32(tile_index % ut.i32tousize(canvas.width));
     const y = ut.usizetoi32(tile_index / ut.i32tousize(canvas.width));
-    // right neighbor: my right edge must match their left edge
+    // right neighbor: (texture_index, rotation) must be a valid left tile of the right neighbor
     if (x + 1 < canvas.width) {
         const ni = ut.i32tousize(y) * ut.i32tousize(canvas.width) + ut.i32tousize(x + 1);
-        const neighbor = canvas.tiles.items[ni];
-        if (neighbor.texture_index >= 0) {
-            const nid = textures.items[ut.i32tousize(neighbor.texture_index)].ids[neighbor.rotation];
-            if (!edgeMatches(tex_id.right, nid.left, tol)) {
-                //std.debug.print("FAIL right: tex={d} rot={d} at ({d},{d}) vs tex={d} rot={d} at ({d},{d})\n  my_right[0..6]={any}\n  nb_left [0..6]={any}\n", .{ texture_index, rotation, x, y, neighbor.texture_index, neighbor.rotation, x + 1, y, tex_id.right[0..@min(6, tex_id.right.len)], nid.left[0..@min(6, nid.left.len)] });
-                return false;
-            }
+        const nb = canvas.tiles.items[ni];
+        if (nb.texture_index >= 0) {
+            if (!adjContains(canvas.right_adj, adjKey(texture_index, rotation, @intCast(nb.texture_index), nb.rotation))) return false;
         }
     }
-    // left neighbor: my left edge must match their right edge
+    // left neighbor: the left neighbor must be a valid left tile of (texture_index, rotation)
     if (x > 0) {
         const ni = ut.i32tousize(y) * ut.i32tousize(canvas.width) + ut.i32tousize(x - 1);
-        const neighbor = canvas.tiles.items[ni];
-        if (neighbor.texture_index >= 0) {
-            const nid = textures.items[ut.i32tousize(neighbor.texture_index)].ids[neighbor.rotation];
-            if (!edgeMatches(tex_id.left, nid.right, tol)) {
-                //std.debug.print("FAIL left: tex={d} rot={d} at ({d},{d}) vs tex={d} rot={d} at ({d},{d})\n  my_left [0..6]={any}\n  nb_right[0..6]={any}\n", .{ texture_index, rotation, x, y, neighbor.texture_index, neighbor.rotation, x - 1, y, tex_id.left[0..@min(6, tex_id.left.len)], nid.right[0..@min(6, nid.right.len)] });
-                return false;
-            }
+        const nb = canvas.tiles.items[ni];
+        if (nb.texture_index >= 0) {
+            if (!adjContains(canvas.right_adj, adjKey(@intCast(nb.texture_index), nb.rotation, texture_index, rotation))) return false;
         }
     }
-    // bottom neighbor: my bottom edge must match their top edge
+    // below neighbor: (texture_index, rotation) must be a valid top tile of the below neighbor
     if (y + 1 < canvas.height) {
         const ni = ut.i32tousize(y + 1) * ut.i32tousize(canvas.width) + ut.i32tousize(x);
-        const neighbor = canvas.tiles.items[ni];
-        if (neighbor.texture_index >= 0) {
-            const nid = textures.items[ut.i32tousize(neighbor.texture_index)].ids[neighbor.rotation];
-            if (!edgeMatches(tex_id.bottom, nid.top, tol)) return false;
+        const nb = canvas.tiles.items[ni];
+        if (nb.texture_index >= 0) {
+            if (!adjContains(canvas.below_adj, adjKey(texture_index, rotation, @intCast(nb.texture_index), nb.rotation))) return false;
         }
     }
-    // top neighbor: my top edge must match their bottom edge
+    // above neighbor: the above neighbor must be a valid top tile of (texture_index, rotation)
     if (y > 0) {
         const ni = ut.i32tousize(y - 1) * ut.i32tousize(canvas.width) + ut.i32tousize(x);
-        const neighbor = canvas.tiles.items[ni];
-        if (neighbor.texture_index >= 0) {
-            const nid = textures.items[ut.i32tousize(neighbor.texture_index)].ids[neighbor.rotation];
-            if (!edgeMatches(tex_id.top, nid.bottom, tol)) return false;
+        const nb = canvas.tiles.items[ni];
+        if (nb.texture_index >= 0) {
+            if (!adjContains(canvas.below_adj, adjKey(@intCast(nb.texture_index), nb.rotation, texture_index, rotation))) return false;
         }
     }
     return true;
@@ -634,10 +549,10 @@ fn collectValidTiles(canvas: *Canvas, textures: *Textures, active_images: *std.A
     const num_images = active_images.items.len;
     for (0..num_images) |i| {
         if (!active_images.items[i]) continue;
-        const num_rotations: usize = if (canvas.should_rotate) 4 else 1;
+        const num_rotations: usize = textures.items[i].max_rotations;
         for (0..num_rotations) |r| {
             const rot: u2 = @intCast(r);
-            if (canPlaceTexture(canvas, tile_index, textures, i, rot)) {
+            if (canPlaceTexture(canvas, tile_index, i, rot)) {
                 try list.append(std.heap.page_allocator, .{ .index = i, .rotation = rot });
             }
         }
@@ -831,7 +746,7 @@ pub fn wfc(io: std.Io) bool {
         var active_tileset: i32 = 0;
         var textures: Textures = .empty;
         var active_images: std.ArrayList(bool) = .empty;
-        var canvas: Canvas = .{ .tiles = .empty, .possibilities = &.{}, .width = 0, .height = 0, .texture_size = 0, .pixel_tolerance = 0, .should_rotate = true };
+        var canvas: Canvas = .{ .tiles = .empty, .possibilities = &.{}, .width = 0, .height = 0, .texture_size = 0, .right_adj = &.{}, .below_adj = &.{} };
         var history: std.ArrayList(HistoryEntry) = .empty;
         var texture_arena: std.heap.ArenaAllocator = undefined;
         var time_step_ms: i64 = 10;
