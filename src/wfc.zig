@@ -543,6 +543,18 @@ fn freeHistory(history: *std.ArrayList(HistoryEntry)) void {
     history.clearAndFree(std.heap.page_allocator);
 }
 
+fn countValidPlacements(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool), tile_index: usize) usize {
+    var count: usize = 0;
+    for (0..active_images.items.len) |i| {
+        if (!active_images.items[i]) continue;
+        const num_rotations: usize = textures.items[i].max_rotations;
+        for (0..num_rotations) |r| {
+            if (canPlaceTexture(canvas, tile_index, i, @intCast(r))) count += 1;
+        }
+    }
+    return count;
+}
+
 fn collectValidTiles(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool), tile_index: usize) ![]ValidTile {
     var list: std.ArrayList(ValidTile) = .empty;
     errdefer list.deinit(std.heap.page_allocator);
@@ -573,14 +585,9 @@ fn recomputeAllPossibilities(canvas: *Canvas, textures: *Textures, active_images
             canvas.possibilities[i] = 0;
             continue;
         }
-        const valid = collectValidTiles(canvas, textures, active_images, i) catch {
-            canvas.possibilities[i] = 0;
-            tile.* = Tile{ .texture_index = -2, .rotation = 0 };
-            continue;
-        };
-        defer std.heap.page_allocator.free(valid);
-        canvas.possibilities[i] = ut.usizetoi32(valid.len);
-        if (valid.len == 0) {
+        const count = countValidPlacements(canvas, textures, active_images, i);
+        canvas.possibilities[i] = ut.usizetoi32(count);
+        if (count == 0) {
             tile.* = Tile{ .texture_index = -2, .rotation = 0 };
         }
     }
