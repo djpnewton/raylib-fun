@@ -21,7 +21,7 @@ pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    var demo: ?*const fn (io: std.Io) bool = wfc.wfc; // default demo to run on startup
+    var demo: ?*const fn (io: std.Io) bool = null; // default demo to run on startup
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key

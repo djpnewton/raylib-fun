@@ -37,7 +37,7 @@ jobs:
           restore-keys: zig-
 
       - name: Build for web
-        run: zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseSmall
+        run: zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseFast
 
       - name: Cache-bust JS reference in HTML
         run: sed -i "s/raylib_fun\.js/raylib_fun.js?v=$(date -u +%Y%m%d%H%M%S)/g" zig-out/web/raylib_fun.html

@@ -113,12 +113,13 @@ fn readManifest(allocator: std.mem.Allocator) !Manifest {
     return map;
 }
 
-fn tilesetSelectButtons(manifest: *const Manifest, active: *i32) void {
+/// Tileset selector dropdown. Returns true when the active selection changed.
+fn tilesetDropdown(manifest: *const Manifest, active: *i32, edit_mode: *bool) bool {
     const offset_x = ut.button_spacing + ut.button_height + ut.button_spacing;
     const offset_y = ut.button_spacing;
-    const size_x = 60;
+    const size_x = 90;
     const size_y = ut.button_height;
-    const r = rl.Rectangle{ .x = offset_x, .y = offset_y, .width = size_x, .height = size_y };
+    const r = rl.Rectangle{ .x = ut.i32tof32(offset_x), .y = ut.i32tof32(offset_y), .width = ut.i32tof32(size_x), .height = ut.i32tof32(size_y) };
 
     var buf: [1024]u8 = undefined;
     var pos: usize = 0;
@@ -136,11 +137,38 @@ fn tilesetSelectButtons(manifest: *const Manifest, active: *i32) void {
     }
     buf[pos] = 0;
     const tilesets_str: [:0]const u8 = buf[0..pos :0];
-    _ = rg.toggleGroup(r, tilesets_str, active);
+    const prev = active.*;
+    if (rg.dropdownBox(r, tilesets_str, active, edit_mode.*) != 0) {
+        edit_mode.* = !edit_mode.*;
+    }
+    return active.* != prev;
+}
+const canvas_size_options = [_]i32{ 5, 10, 20 };
+
+/// Canvas size dropdown. Returns true when the selection changed.
+fn canvasSizeDropdown(active: *i32, edit_mode: *bool) bool {
+    const bs = ut.button_spacing;
+    const bh = ut.button_height;
+    const tileset_x = bs + bh + bs;
+    const tileset_w = 90;
+    const offset_x = tileset_x + tileset_w + bs;
+    const r = rl.Rectangle{
+        .x = ut.i32tof32(offset_x),
+        .y = ut.i32tof32(bs),
+        .width = ut.i32tof32(80),
+        .height = ut.i32tof32(bh),
+    };
+    const prev = active.*;
+    if (rg.dropdownBox(r, "5x5;10x10;20x20", active, edit_mode.*) != 0) {
+        edit_mode.* = !edit_mode.*;
+    }
+    return active.* != prev;
 }
 
+const steps_per_frame_options = [_]usize{ 1, 2, 5 };
+
 /// Play/pause and reset buttons at top-right. Returns true if reset was clicked.
-fn controlButtons(paused: *bool) bool {
+fn controlButtons(paused: *bool, steps_idx: *i32) bool {
     const bh = ut.button_height;
     const bs = ut.button_spacing;
     const w = rl.getRenderWidth();
@@ -152,14 +180,23 @@ fn controlButtons(paused: *bool) bool {
     if (rg.button(rl.Rectangle{ .x = ut.i32tof32(play_x), .y = y_f, .width = bh_f, .height = bh_f }, play_label)) {
         paused.* = !paused.*;
     }
-    return rg.button(rl.Rectangle{ .x = ut.i32tof32(reset_x), .y = y_f, .width = bh_f, .height = bh_f }, "R");
+    const reset_clicked = rg.button(rl.Rectangle{ .x = ut.i32tof32(reset_x), .y = y_f, .width = bh_f, .height = bh_f }, "R");
+    // Steps-per-frame toggle group to the left of play/pause
+    const tg_w = bh * @as(i32, @intCast(steps_per_frame_options.len));
+    const tg_x = play_x - bs - tg_w;
+    _ = rg.toggleGroup(
+        rl.Rectangle{ .x = ut.i32tof32(tg_x), .y = y_f, .width = ut.i32tof32(bh), .height = bh_f },
+        "x1;x2;x5",
+        steps_idx,
+    );
+    return reset_clicked;
 }
 
 /// Returns the tile index under the mouse in the canvas, or null if outside.
-fn canvasHitTest(canvas: *Canvas, textures: *Textures) ?usize {
+fn canvasHitTest(canvas: *Canvas, preview_h: i32) ?usize {
     if (canvas.tiles.items.len == 0 or canvas.texture_size == 0) return null;
     const offset_x = ut.button_spacing;
-    const offset_y = ut.button_spacing * 3 + ut.button_height + previewTotalHeight(textures);
+    const offset_y = ut.button_spacing * 3 + ut.button_height + preview_h;
     const mouse = rl.getMousePosition();
     const mx = @as(i32, @intFromFloat(mouse.x));
     const my = @as(i32, @intFromFloat(mouse.y));
@@ -295,7 +332,7 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
     return false;
 }
 
-fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool)) !void {
+fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool), max_size: i32, preview_h: i32) !void {
     // get texture size, clamped to a minimum of 32px so small tiles are still visible
     const min_tile_size = 32;
     canvas.texture_size = min_tile_size;
@@ -306,11 +343,10 @@ fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayLis
     }
     // get max drawing area
     const draw_width = rl.getRenderWidth() - ut.button_spacing * 2;
-    const preview_h = previewTotalHeight(textures);
     const draw_height = rl.getRenderHeight() - (ut.button_spacing * 4 + ut.button_height + preview_h);
     // calculate how many tiles can fit in the drawing area
-    canvas.width = @min(20, @divTrunc(draw_width, canvas.texture_size));
-    canvas.height = @min(20, @divTrunc(draw_height, canvas.texture_size));
+    canvas.width = @min(max_size, @divTrunc(draw_width, canvas.texture_size));
+    canvas.height = @min(max_size, @divTrunc(draw_height, canvas.texture_size));
     const max_tiles = canvas.width * canvas.height;
     // free old possibilities
     if (canvas.possibilities.len > 0) {
@@ -328,9 +364,9 @@ fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayLis
     recomputeAllPossibilities(canvas, textures, active_images);
 }
 
-fn canvasDraw(canvas: *Canvas, textures: *Textures, selected_tile: i32) void {
+fn canvasDraw(canvas: *Canvas, textures: *Textures, selected_tile: i32, preview_h: i32) void {
     const offset_x = ut.button_spacing;
-    const offset_y = ut.button_spacing * 3 + ut.button_height + previewTotalHeight(textures);
+    const offset_y = ut.button_spacing * 3 + ut.button_height + preview_h;
     for (0..ut.i32tousize(canvas.height)) |y| {
         for (0..ut.i32tousize(canvas.width)) |x| {
             const tile_idx = y * ut.i32tousize(canvas.width) + x;
@@ -400,6 +436,61 @@ fn previewTotalHeight(textures: *Textures) i32 {
     }
     total_h += row_h;
     return total_h;
+}
+
+/// Height to reserve for the preview area. Always includes the toggle button row;
+/// when images_visible also accounts for the button as an extra item in the strip.
+fn previewStripHeight(textures: *Textures, images_visible: bool) i32 {
+    const bh = ut.button_height;
+    if (!images_visible) return bh;
+    const max_x = rl.getRenderWidth() - ut.button_spacing;
+    var x: i32 = ut.button_spacing;
+    var row_h: i32 = 0;
+    var total_h: i32 = 0;
+    for (textures.items) |tex_info| {
+        const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > ut.button_spacing) {
+            x = ut.button_spacing;
+            total_h += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
+        x += ps + 3;
+    }
+    // treat the toggle button as one extra item
+    if (x + bh > max_x and x > ut.button_spacing) {
+        total_h += row_h + 3;
+        row_h = bh;
+    } else {
+        row_h = @max(row_h, bh);
+    }
+    total_h += row_h;
+    return total_h;
+}
+
+/// Position of the toggle button when images are visible: placed after the last image.
+fn previewTogglePos(textures: *Textures) struct { x: i32, y: i32 } {
+    const bs = ut.button_spacing;
+    const bh = ut.button_height;
+    const max_x = rl.getRenderWidth() - bs;
+    var x: i32 = bs;
+    var y: i32 = bs * 2 + bh;
+    var row_h: i32 = 0;
+    for (textures.items) |tex_info| {
+        const ps = previewSize(tex_info.texture);
+        if (x + ps > max_x and x > bs) {
+            x = bs;
+            y += row_h + 3;
+            row_h = 0;
+        }
+        row_h = @max(row_h, ps);
+        x += ps + 3;
+    }
+    if (x + bh > max_x and x > bs) {
+        x = bs;
+        y += row_h + 3;
+    }
+    return .{ .x = x, .y = y };
 }
 
 fn drawImages(textures: *Textures, active_images: *std.ArrayList(bool), pick_mode: bool) void {
@@ -782,12 +873,15 @@ pub fn wfc(io: std.Io) bool {
         var canvas: Canvas = .{ .tiles = .empty, .possibilities = &.{}, .width = 0, .height = 0, .texture_size = 0, .right_adj = &.{}, .below_adj = &.{} };
         var history: std.ArrayList(HistoryEntry) = .empty;
         var texture_arena: std.heap.ArenaAllocator = undefined;
-        var time_step_ms: i64 = 10;
-        var last_update_time: i64 = 0;
         var prng: std.Random.DefaultPrng = undefined;
         var rnd: std.Random = undefined;
         var paused: bool = false;
         var selected_tile: i32 = -1; // >= 0 means pick mode: user is manually choosing a texture for this tile
+        var steps_idx: i32 = 0; // index into steps_per_frame_options
+        var tileset_dropdown_edit: bool = false;
+        var canvas_size_idx: i32 = 2; // default 20x20
+        var canvas_size_dropdown_edit: bool = false;
+        var preview_visible: bool = false;
     };
     if (!S.initialised) {
         S.texture_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
@@ -800,7 +894,7 @@ pub fn wfc(io: std.Io) bool {
                 S.err = "Failed to load tileset images";
             } else {
                 freeHistory(&S.history);
-                canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
+                canvasInit(&S.canvas, &S.textures, &S.active_images, canvas_size_options[@intCast(S.canvas_size_idx)], previewStripHeight(&S.textures, S.preview_visible)) catch |err| {
                     S.err = @errorName(err);
                 };
             }
@@ -810,10 +904,12 @@ pub fn wfc(io: std.Io) bool {
         S.initialised = true;
     }
     // advance WFC only when playing and not in pick mode
-    const now = std.Io.Clock.now(.real, io).toMilliseconds();
-    if (!S.paused and S.selected_tile < 0 and now - S.last_update_time >= S.time_step_ms) {
-        calc(&S.canvas, &S.history, &S.textures, &S.active_images, &S.rnd);
-        S.last_update_time = now;
+    if (!S.paused and S.selected_tile < 0) {
+        const idx = @min(@as(usize, @intCast(S.steps_idx)), steps_per_frame_options.len - 1);
+        const steps = steps_per_frame_options[idx];
+        for (0..steps) |_| {
+            calc(&S.canvas, &S.history, &S.textures, &S.active_images, &S.rnd);
+        }
     }
     // draw everything
     rl.beginDrawing();
@@ -825,37 +921,46 @@ pub fn wfc(io: std.Io) bool {
     }
     if (S.manifest) |*manifest| {
         const prev_active = S.active_tileset;
-        tilesetSelectButtons(manifest, &S.active_tileset);
-        if (prev_active != S.active_tileset) {
-            S.selected_tile = -1;
-            if (!tilesetLoadImages(manifest, S.active_tileset, &S.textures, &S.active_images, &S.canvas, &S.texture_arena)) {
-                S.err = "Failed to load tileset images";
-            } else {
-                freeHistory(&S.history);
-                canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
-                    S.err = @errorName(err);
-                };
-            }
-        }
+        // (dropdown drawn last, after canvas, so its open list renders on top)
+        _ = prev_active; // change detection done below after draw
+        const ph: i32 = previewStripHeight(&S.textures, S.preview_visible);
         // Control buttons: play/pause and reset
-        if (controlButtons(&S.paused)) {
+        if (controlButtons(&S.paused, &S.steps_idx)) {
             S.selected_tile = -1;
             freeHistory(&S.history);
-            canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
+            canvasInit(&S.canvas, &S.textures, &S.active_images, canvas_size_options[@intCast(S.canvas_size_idx)], ph) catch |err| {
                 S.err = @errorName(err);
             };
         }
-        drawImages(&S.textures, &S.active_images, S.selected_tile >= 0);
-        highlightImage(&S.textures);
+        if (S.preview_visible) {
+            drawImages(&S.textures, &S.active_images, S.selected_tile >= 0);
+            highlightImage(&S.textures);
+        }
+        // Toggle button: after all images when visible, at left edge when hidden
+        var preview_toggle_clicked = false;
+        {
+            const bh = ut.button_height;
+            const bs = ut.button_spacing;
+            const tp = previewTogglePos(&S.textures);
+            const btn_x: i32 = if (S.preview_visible) tp.x else bs;
+            const btn_y: i32 = if (S.preview_visible) tp.y else bs * 2 + bh;
+            const label: [:0]const u8 = if (S.preview_visible) "<" else ">";
+            if (rg.button(rl.Rectangle{ .x = ut.i32tof32(btn_x), .y = ut.i32tof32(btn_y), .width = ut.i32tof32(bh), .height = ut.i32tof32(bh) }, label)) {
+                S.preview_visible = !S.preview_visible;
+                preview_toggle_clicked = true;
+            }
+        }
         if (S.selected_tile >= 0) {
             // Pick mode: left click places the hovered preview texture on the selected tile;
             // clicking anywhere else cancels pick mode.
-            if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
-                if (previewHitTest(&S.textures)) |tex_idx| {
-                    const ti = ut.i32tousize(S.selected_tile);
-                    S.canvas.tiles.items[ti] = Tile{ .texture_index = ut.usizetoi32(tex_idx), .rotation = 0 };
-                    freeHistory(&S.history);
-                    recomputeAllPossibilities(&S.canvas, &S.textures, &S.active_images);
+            if (rl.isMouseButtonReleased(rl.MouseButton.left) and !S.tileset_dropdown_edit and !S.canvas_size_dropdown_edit and !preview_toggle_clicked) {
+                if (S.preview_visible) {
+                    if (previewHitTest(&S.textures)) |tex_idx| {
+                        const ti = ut.i32tousize(S.selected_tile);
+                        S.canvas.tiles.items[ti] = Tile{ .texture_index = ut.usizetoi32(tex_idx), .rotation = 0 };
+                        freeHistory(&S.history);
+                        recomputeAllPossibilities(&S.canvas, &S.textures, &S.active_images);
+                    }
                 }
                 S.selected_tile = -1;
             }
@@ -866,26 +971,45 @@ pub fn wfc(io: std.Io) bool {
                 return false;
             };
             defer prev_active_images.deinit(std.heap.c_allocator);
-            selectImage(&S.textures, &S.active_images);
+            if (S.preview_visible and !preview_toggle_clicked) selectImage(&S.textures, &S.active_images);
             for (S.active_images.items, 0..) |active, i| {
                 if (active != prev_active_images.items[i]) {
                     // image was toggled
                     freeHistory(&S.history);
-                    canvasInit(&S.canvas, &S.textures, &S.active_images) catch |err| {
+                    canvasInit(&S.canvas, &S.textures, &S.active_images, canvas_size_options[@intCast(S.canvas_size_idx)], ph) catch |err| {
                         S.err = @errorName(err);
                     };
                     break;
                 }
             }
             // Click on a canvas tile → enter pick mode and pause
-            if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
-                if (canvasHitTest(&S.canvas, &S.textures)) |ti| {
+            if (rl.isMouseButtonReleased(rl.MouseButton.left) and !S.tileset_dropdown_edit and !S.canvas_size_dropdown_edit) {
+                if (canvasHitTest(&S.canvas, ph)) |ti| {
                     S.selected_tile = ut.usizetoi32(ti);
                     S.paused = true;
                 }
             }
         }
-        canvasDraw(&S.canvas, &S.textures, S.selected_tile);
+        canvasDraw(&S.canvas, &S.textures, S.selected_tile, ph);
+        // Draw dropdowns on top so their open lists aren't obscured by the canvas.
+        if (tilesetDropdown(manifest, &S.active_tileset, &S.tileset_dropdown_edit)) {
+            S.selected_tile = -1;
+            if (!tilesetLoadImages(manifest, S.active_tileset, &S.textures, &S.active_images, &S.canvas, &S.texture_arena)) {
+                S.err = "Failed to load tileset images";
+            } else {
+                freeHistory(&S.history);
+                canvasInit(&S.canvas, &S.textures, &S.active_images, canvas_size_options[@intCast(S.canvas_size_idx)], ph) catch |err| {
+                    S.err = @errorName(err);
+                };
+            }
+        }
+        if (canvasSizeDropdown(&S.canvas_size_idx, &S.canvas_size_dropdown_edit)) {
+            S.selected_tile = -1;
+            freeHistory(&S.history);
+            canvasInit(&S.canvas, &S.textures, &S.active_images, canvas_size_options[@intCast(S.canvas_size_idx)], ph) catch |err| {
+                S.err = @errorName(err);
+            };
+        }
     }
     if (ut.backBtn()) {
         return true;
