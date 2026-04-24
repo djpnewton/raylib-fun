@@ -598,6 +598,27 @@ fn recomputeAllPossibilities(canvas: *Canvas, textures: *Textures, active_images
     }
 }
 
+/// Recompute possibility counts only for the 4 orthogonal neighbours of a just-placed tile.
+/// Since canPlaceTexture only queries direct neighbours, only those cells can change.
+fn recomputeNeighborPossibilities(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool), placed_index: usize) void {
+    if (canvas.possibilities.len != canvas.tiles.items.len) return;
+    const w = ut.i32tousize(canvas.width);
+    const px: i32 = @intCast(placed_index % w);
+    const py: i32 = @intCast(placed_index / w);
+    const offsets = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
+    for (offsets) |off| {
+        const nx = px + off[0];
+        const ny = py + off[1];
+        if (nx < 0 or ny < 0 or nx >= canvas.width or ny >= canvas.height) continue;
+        const ni = @as(usize, @intCast(ny)) * w + @as(usize, @intCast(nx));
+        const tile = &canvas.tiles.items[ni];
+        if (tile.texture_index >= 0 or tile.texture_index == -2) continue;
+        const count = countValidPlacements(canvas, textures, active_images, ni);
+        canvas.possibilities[ni] = ut.usizetoi32(count);
+        if (count == 0) tile.* = Tile{ .texture_index = -2, .rotation = 0 };
+    }
+}
+
 /// Undo the most recent placement and try its next available option.
 /// Returns the tile_index that was re-placed, or null if history is exhausted.
 fn backtrack(canvas: *Canvas, history: *std.ArrayList(HistoryEntry)) ?usize {
@@ -679,7 +700,7 @@ fn calc(canvas: *Canvas, history: *std.ArrayList(HistoryEntry), textures: *Textu
             source_texure_index = @mod(std.Random.int(rnd.*, usize), num_images);
         }
         canvas.tiles.items[target_tile] = Tile{ .texture_index = ut.usizetoi32(source_texure_index), .rotation = 0 };
-        recomputeAllPossibilities(canvas, textures, active_images);
+        recomputeNeighborPossibilities(canvas, textures, active_images, target_tile);
         return;
     }
     // find tile indexes around filled area
@@ -745,8 +766,8 @@ fn calc(canvas: *Canvas, history: *std.ArrayList(HistoryEntry), textures: *Textu
             return;
         };
         canvas.tiles.items[target_tile] = Tile{ .texture_index = ut.usizetoi32(chosen.index), .rotation = chosen.rotation };
-        // propagate constraints: recompute possibilities for all empty tiles
-        recomputeAllPossibilities(canvas, textures, active_images);
+        // propagate constraints: only the 4 neighbours of the placed tile can change
+        recomputeNeighborPossibilities(canvas, textures, active_images, target_tile);
     }
 }
 
