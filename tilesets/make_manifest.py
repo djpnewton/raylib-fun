@@ -253,7 +253,8 @@ for d in sorted(root.iterdir()):
               f"{len(entry['below_neighbors'])} below-pairs")
 
 output_path = root.parent / "src" / "tilesets_manifest.json"
-output_path.write_text(json.dumps(manifest, indent=2) + "\n")
-total = sum(len(v["tiles"]) for v in manifest.values())
-print(f"\nWrote {output_path} ({total} tiles across {len(manifest)} tilesets)")
+manifest_list = [{"name": name, **entry} for name, entry in manifest.items()]
+output_path.write_text(json.dumps(manifest_list, indent=2) + "\n")
+total = sum(len(entry["tiles"]) for entry in manifest_list)
+print(f"\nWrote {output_path} ({total} tiles across {len(manifest_list)} tilesets)")
 

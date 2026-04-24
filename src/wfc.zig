@@ -17,6 +17,19 @@ const TilesetEntry = struct {
 
 const Manifest = std.StringHashMap(TilesetEntry);
 
+// Typed structs for iterative JSON parsing (avoids recursive std.json.Value).
+const ManifestTileJson = struct {
+    path: []const u8,
+    symmetry: []const u8,
+};
+
+const ManifestTilesetJson = struct {
+    name: []const u8,
+    tiles: []const ManifestTileJson,
+    right_neighbors: []const [4]u8,
+    below_neighbors: []const [4]u8,
+};
+
 const TextureInfo = struct {
     texture: rl.Texture,
     max_rotations: u8, // 1, 2, or 4
@@ -52,16 +65,21 @@ const HistoryEntry = struct {
 
 fn readManifest(allocator: std.mem.Allocator) !Manifest {
     const data = @embedFile("tilesets_manifest.json");
-    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, data, .{});
+    // Use c_allocator for the temporary parse tree so small allocations go through
+    // emmalloc (not wasm page_allocator which wastes a full 64KB page per alloc).
+    const parsed = try std.json.parseFromSlice(
+        []const ManifestTilesetJson,
+        std.heap.c_allocator,
+        data,
+        .{ .ignore_unknown_fields = true },
+    );
     defer parsed.deinit();
 
     var map = Manifest.init(allocator);
     errdefer map.deinit();
 
-    var it = parsed.value.object.iterator();
-    while (it.next()) |entry| {
-        const key = try allocator.dupeZ(u8, entry.key_ptr.*);
-        const obj = entry.value_ptr.object;
+    for (parsed.value) |ts| {
+        const key = try allocator.dupeZ(u8, ts.name);
 
         var tile_list: std.ArrayList([:0]const u8) = .empty;
         errdefer tile_list.deinit(allocator);
@@ -72,30 +90,17 @@ fn readManifest(allocator: std.mem.Allocator) !Manifest {
         var bn_list: std.ArrayList([4]u8) = .empty;
         errdefer bn_list.deinit(allocator);
 
-        for (obj.get("tiles").?.array.items) |item| {
-            const tile_obj = item.object;
-            const path = try allocator.dupeZ(u8, tile_obj.get("path").?.string);
+        for (ts.tiles) |tile| {
+            const path = try allocator.dupeZ(u8, tile.path);
             try tile_list.append(allocator, path);
-            const sym_str = tile_obj.get("symmetry").?.string;
-            try sym_list.append(allocator, sym_str[0]);
+            const sym_char: u8 = if (tile.symmetry.len > 0) tile.symmetry[0] else 'X';
+            try sym_list.append(allocator, sym_char);
         }
-        for (obj.get("right_neighbors").?.array.items) |nb| {
-            const arr = nb.array.items;
-            try rn_list.append(allocator, .{
-                @intCast(arr[0].integer),
-                @intCast(arr[1].integer),
-                @intCast(arr[2].integer),
-                @intCast(arr[3].integer),
-            });
+        for (ts.right_neighbors) |nb| {
+            try rn_list.append(allocator, nb);
         }
-        for (obj.get("below_neighbors").?.array.items) |nb| {
-            const arr = nb.array.items;
-            try bn_list.append(allocator, .{
-                @intCast(arr[0].integer),
-                @intCast(arr[1].integer),
-                @intCast(arr[2].integer),
-                @intCast(arr[3].integer),
-            });
+        for (ts.below_neighbors) |nb| {
+            try bn_list.append(allocator, nb);
         }
 
         try map.put(key, TilesetEntry{
@@ -212,8 +217,8 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
     textures.* = .empty;
     active_images.* = .empty;
     // Free old adjacency slices.
-    if (canvas.right_adj.len > 0) std.heap.page_allocator.free(canvas.right_adj);
-    if (canvas.below_adj.len > 0) std.heap.page_allocator.free(canvas.below_adj);
+    if (canvas.right_adj.len > 0) std.heap.c_allocator.free(canvas.right_adj);
+    if (canvas.below_adj.len > 0) std.heap.c_allocator.free(canvas.below_adj);
     canvas.right_adj = &.{};
     canvas.below_adj = &.{};
     const alloc = arena.allocator();
@@ -258,14 +263,14 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
                 }
                 // Build sorted adjacency slices for O(log n) lookup.
                 var right_list: std.ArrayList(u32) = .empty;
-                defer right_list.deinit(std.heap.page_allocator);
+                defer right_list.deinit(std.heap.c_allocator);
                 var below_list: std.ArrayList(u32) = .empty;
-                defer below_list.deinit(std.heap.page_allocator);
+                defer below_list.deinit(std.heap.c_allocator);
                 for (entry.right_neighbors.items) |nb| {
-                    right_list.append(std.heap.page_allocator, adjKey(nb[0], @intCast(nb[1]), nb[2], @intCast(nb[3]))) catch {};
+                    right_list.append(std.heap.c_allocator, adjKey(nb[0], @intCast(nb[1]), nb[2], @intCast(nb[3]))) catch {};
                 }
                 for (entry.below_neighbors.items) |nb| {
-                    below_list.append(std.heap.page_allocator, adjKey(nb[0], @intCast(nb[1]), nb[2], @intCast(nb[3]))) catch {};
+                    below_list.append(std.heap.c_allocator, adjKey(nb[0], @intCast(nb[1]), nb[2], @intCast(nb[3]))) catch {};
                 }
                 std.mem.sort(u32, right_list.items, {}, struct {
                     fn lt(_: void, a: u32, b: u32) bool {
@@ -277,8 +282,8 @@ fn tilesetLoadImages(manifest: *const Manifest, active: i32, textures: *Textures
                         return a < b;
                     }
                 }.lt);
-                canvas.right_adj = right_list.toOwnedSlice(std.heap.page_allocator) catch &.{};
-                canvas.below_adj = below_list.toOwnedSlice(std.heap.page_allocator) catch &.{};
+                canvas.right_adj = right_list.toOwnedSlice(std.heap.c_allocator) catch &.{};
+                canvas.below_adj = below_list.toOwnedSlice(std.heap.c_allocator) catch &.{};
             } else {
                 std.debug.print("Failed to find tileset in manifest: {s}\n", .{tileset});
                 return false;
@@ -309,12 +314,12 @@ fn canvasInit(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayLis
     const max_tiles = canvas.width * canvas.height;
     // free old possibilities
     if (canvas.possibilities.len > 0) {
-        std.heap.page_allocator.free(canvas.possibilities);
+        std.heap.c_allocator.free(canvas.possibilities);
         canvas.possibilities = &.{};
     }
     // allocate canvas
-    try canvas.tiles.resize(std.heap.page_allocator, ut.i32tousize(max_tiles));
-    canvas.possibilities = try std.heap.page_allocator.alloc(i32, ut.i32tousize(max_tiles));
+    try canvas.tiles.resize(std.heap.c_allocator, ut.i32tousize(max_tiles));
+    canvas.possibilities = try std.heap.c_allocator.alloc(i32, ut.i32tousize(max_tiles));
     // fill canvas with -1 to indicate unset tile
     for (canvas.tiles.items) |*tile| {
         tile.* = Tile{ .texture_index = -1, .rotation = 0 };
@@ -538,9 +543,9 @@ fn canPlaceTexture(canvas: *Canvas, tile_index: usize, texture_index: usize, rot
 
 fn freeHistory(history: *std.ArrayList(HistoryEntry)) void {
     for (history.items) |entry| {
-        std.heap.page_allocator.free(entry.options);
+        std.heap.c_allocator.free(entry.options);
     }
-    history.clearAndFree(std.heap.page_allocator);
+    history.clearAndFree(std.heap.c_allocator);
 }
 
 fn countValidPlacements(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool), tile_index: usize) usize {
@@ -557,7 +562,7 @@ fn countValidPlacements(canvas: *Canvas, textures: *Textures, active_images: *st
 
 fn collectValidTiles(canvas: *Canvas, textures: *Textures, active_images: *std.ArrayList(bool), tile_index: usize) ![]ValidTile {
     var list: std.ArrayList(ValidTile) = .empty;
-    errdefer list.deinit(std.heap.page_allocator);
+    errdefer list.deinit(std.heap.c_allocator);
     const num_images = active_images.items.len;
     for (0..num_images) |i| {
         if (!active_images.items[i]) continue;
@@ -565,11 +570,11 @@ fn collectValidTiles(canvas: *Canvas, textures: *Textures, active_images: *std.A
         for (0..num_rotations) |r| {
             const rot: u2 = @intCast(r);
             if (canPlaceTexture(canvas, tile_index, i, rot)) {
-                try list.append(std.heap.page_allocator, .{ .index = i, .rotation = rot });
+                try list.append(std.heap.c_allocator, .{ .index = i, .rotation = rot });
             }
         }
     }
-    return list.toOwnedSlice(std.heap.page_allocator);
+    return list.toOwnedSlice(std.heap.c_allocator);
 }
 
 /// Recompute possibility counts for every empty tile.
@@ -611,7 +616,7 @@ fn backtrack(canvas: *Canvas, history: *std.ArrayList(HistoryEntry)) ?usize {
             return entry.tile_index;
         }
         // all options at this level exhausted — pop and keep backing up
-        std.heap.page_allocator.free(entry.options);
+        std.heap.c_allocator.free(entry.options);
         _ = history.pop();
     }
     // history empty: no solution possible with current active tiles
@@ -679,7 +684,7 @@ fn calc(canvas: *Canvas, history: *std.ArrayList(HistoryEntry), textures: *Textu
     }
     // find tile indexes around filled area
     var candidate_tiles = std.ArrayList(usize).empty;
-    defer candidate_tiles.deinit(std.heap.page_allocator);
+    defer candidate_tiles.deinit(std.heap.c_allocator);
     for (canvas.tiles.items, 0..) |tile, i| {
         if (tile.texture_index >= 0) {
             const x = ut.usizetoi32(i % ut.i32tousize(canvas.width));
@@ -696,7 +701,7 @@ fn calc(canvas: *Canvas, history: *std.ArrayList(HistoryEntry), textures: *Textu
                     if (canvas.tiles.items[neighbor_index].texture_index < 0) {
                         // this tile is a candidate for placing a new tile
                         if (!std.mem.containsAtLeast(usize, candidate_tiles.items, 1, &.{neighbor_index})) {
-                            candidate_tiles.append(std.heap.page_allocator, neighbor_index) catch |err| {
+                            candidate_tiles.append(std.heap.c_allocator, neighbor_index) catch |err| {
                                 std.debug.print("Failed to append candidate tile index: {any}\n", .{err});
                                 return;
                             };
@@ -725,18 +730,18 @@ fn calc(canvas: *Canvas, history: *std.ArrayList(HistoryEntry), textures: *Textu
         const valid_tiles = collectValidTiles(canvas, textures, active_images, target_tile) catch return;
         if (valid_tiles.len == 0) {
             // safety guard: mark and backtrack next frame
-            std.heap.page_allocator.free(valid_tiles);
+            std.heap.c_allocator.free(valid_tiles);
             canvas.tiles.items[target_tile] = Tile{ .texture_index = -2, .rotation = 0 };
             return;
         }
         const chosen_idx = @mod(std.Random.int(rnd.*, usize), valid_tiles.len);
         const chosen = valid_tiles[chosen_idx];
-        history.append(std.heap.page_allocator, .{
+        history.append(std.heap.c_allocator, .{
             .tile_index = target_tile,
             .options = valid_tiles,
             .chosen_idx = chosen_idx,
         }) catch {
-            std.heap.page_allocator.free(valid_tiles);
+            std.heap.c_allocator.free(valid_tiles);
             return;
         };
         canvas.tiles.items[target_tile] = Tile{ .texture_index = ut.usizetoi32(chosen.index), .rotation = chosen.rotation };
@@ -758,13 +763,14 @@ pub fn wfc(io: std.Io) bool {
         var texture_arena: std.heap.ArenaAllocator = undefined;
         var time_step_ms: i64 = 10;
         var last_update_time: i64 = 0;
+        var prng: std.Random.DefaultPrng = undefined;
         var rnd: std.Random = undefined;
         var paused: bool = false;
         var selected_tile: i32 = -1; // >= 0 means pick mode: user is manually choosing a texture for this tile
     };
     if (!S.initialised) {
-        S.texture_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        S.manifest = readManifest(std.heap.page_allocator) catch |err| blk: {
+        S.texture_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+        S.manifest = readManifest(std.heap.c_allocator) catch |err| blk: {
             S.err = @errorName(err);
             break :blk null;
         };
@@ -778,8 +784,8 @@ pub fn wfc(io: std.Io) bool {
                 };
             }
         }
-        var prng = std.Random.DefaultPrng.init(@intCast(std.Io.Clock.now(.real, io).toMicroseconds()));
-        S.rnd = prng.random();
+        S.prng = std.Random.DefaultPrng.init(@intCast(std.Io.Clock.now(.real, io).toMicroseconds()));
+        S.rnd = S.prng.random();
         S.initialised = true;
     }
     // advance WFC only when playing and not in pick mode
@@ -834,11 +840,11 @@ pub fn wfc(io: std.Io) bool {
             }
         } else {
             // Normal mode: toggle active images and detect canvas clicks.
-            var prev_active_images = S.active_images.clone(std.heap.page_allocator) catch |err| {
+            var prev_active_images = S.active_images.clone(std.heap.c_allocator) catch |err| {
                 S.err = @errorName(err);
                 return false;
             };
-            defer prev_active_images.deinit(std.heap.page_allocator);
+            defer prev_active_images.deinit(std.heap.c_allocator);
             selectImage(&S.textures, &S.active_images);
             for (S.active_images.items, 0..) |active, i| {
                 if (active != prev_active_images.items[i]) {

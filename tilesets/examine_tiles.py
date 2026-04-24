@@ -36,13 +36,15 @@ def sym_rotations(sym: str) -> int:
 def load_tileset(name: str):
     """Return (tiles, variants, right_set, below_set) for the named tileset."""
     manifest = json.loads(MANIFEST.read_text())
-    if name not in manifest:
+    # Array format: [{"name": ..., "tiles": ..., ...}, ...]
+    by_name = {ts["name"]: ts for ts in manifest}
+    if name not in by_name:
         # Try case-insensitive
-        matches = [k for k in manifest if k.lower() == name.lower()]
+        matches = [k for k in by_name if k.lower() == name.lower()]
         if not matches:
-            raise SystemExit(f"Tileset '{name}' not found. Available: {', '.join(manifest)}")
+            raise SystemExit(f"Tileset '{name}' not found. Available: {', '.join(by_name)}")
         name = matches[0]
-    entry = manifest[name]
+    entry = by_name[name]
 
     tiles = []
     for t in entry["tiles"]:

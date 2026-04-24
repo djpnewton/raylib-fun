@@ -92,7 +92,10 @@ pub fn build(b: *std.Build) !void {
 
         const install_dir: std.Build.InstallDir = .{ .custom = "web" };
         const emcc_flags = emsdk.emccDefaultFlags(b.allocator, .{ .optimize = optimize });
-        const emcc_settings = emsdk.emccDefaultSettings(b.allocator, .{ .optimize = optimize });
+        var emcc_settings = emsdk.emccDefaultSettings(b.allocator, .{ .optimize = optimize });
+        emcc_settings.put("ALLOW_MEMORY_GROWTH", "1") catch unreachable;
+        emcc_settings.put("INITIAL_MEMORY", "67108864") catch unreachable;
+        emcc_settings.put("STACK_SIZE", "1048576") catch unreachable;
         const emcc_step = emsdk.emccStep(b, raylib_artifact, wasm, .{
             .optimize = optimize,
             .flags = emcc_flags,

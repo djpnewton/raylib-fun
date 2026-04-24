@@ -1,5 +1,6 @@
-{
-  "Castle": {
+[
+  {
+    "name": "Castle",
     "tiles": [
       {
         "name": "bridge",
@@ -2113,7 +2114,8 @@
       ]
     ]
   },
-  "Circles": {
+  {
+    "name": "Circles",
     "tiles": [
       {
         "name": "b_half",
@@ -5073,7 +5075,8 @@
       ]
     ]
   },
-  "Circuit": {
+  {
+    "name": "Circuit",
     "tiles": [
       {
         "name": "bridge",
@@ -10541,7 +10544,8 @@
       ]
     ]
   },
-  "FloorPlan": {
+  {
+    "name": "FloorPlan",
     "tiles": [
       {
         "name": "empty",
@@ -14743,7 +14747,8 @@
       ]
     ]
   },
-  "Knots": {
+  {
+    "name": "Knots",
     "tiles": [
       {
         "name": "corner",
@@ -15849,7 +15854,8 @@
       ]
     ]
   },
-  "Rooms": {
+  {
+    "name": "Rooms",
     "tiles": [
       {
         "name": "bend",
@@ -17267,7 +17273,8 @@
       ]
     ]
   },
-  "Summer": {
+  {
+    "name": "Summer",
     "tiles": [
       {
         "name": "cliff 0",
@@ -19351,4 +19358,4 @@
       ]
     ]
   }
-}
+]
