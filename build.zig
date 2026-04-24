@@ -102,6 +102,11 @@ pub fn build(b: *std.Build) !void {
             .settings = emcc_settings,
             .shell_file_path = b.path("src/shell.html"),
             .install_dir = install_dir,
+            .embed_paths = &.{
+                // Embed the entire tilesets/ directory into the wasm virtual filesystem
+                // so raylib can load PNG files via the normal file path.
+                .{ .src_path = b.pathFromRoot("tilesets"), .virtual_path = "tilesets" },
+            },
         });
         b.getInstallStep().dependOn(emcc_step);
 
