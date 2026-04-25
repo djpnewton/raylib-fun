@@ -10,6 +10,10 @@ pub fn usizetof32(value: usize) f32 {
     return @as(f32, @floatFromInt(value));
 }
 
+pub fn f32tousize(value: f32) usize {
+    return @as(usize, @intFromFloat(value));
+}
+
 pub fn i32tousize(value: i32) usize {
     return @as(usize, @intCast(value));
 }
@@ -76,4 +80,9 @@ pub fn drawTextCentered(text: [:0]const u8, font_size: i32, color: rl.Color) voi
     const offset_x = @divTrunc(rl.getRenderWidth(), 2) - @divTrunc(text_width, 2);
     const offset_y = @divTrunc(rl.getRenderHeight(), 2) - @divTrunc(font_size, 2);
     rl.drawText(text, offset_x, offset_y, font_size, color);
+}
+
+/// like p5.js map function
+pub fn map(value: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) f32 {
+    return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }

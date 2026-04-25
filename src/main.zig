@@ -7,6 +7,7 @@ const fractal = @import("fractal.zig");
 const life = @import("life.zig");
 const raycast = @import("raycast.zig");
 const wfc = @import("wfc.zig");
+const starfield = @import("starfield.zig");
 
 pub fn main(init: std.process.Init) !void {
     // Initialization
@@ -53,6 +54,9 @@ pub fn main(init: std.process.Init) !void {
         y += ut.button_height + ut.button_spacing;
         if (ut.btn(x, y, btn_width, ut.button_height, "Wave Function Collapse"))
             demo = wfc.wfc;
+        y += ut.button_height + ut.button_spacing;
+        if (ut.btn(x, y, btn_width, ut.button_height, "Starfield"))
+            demo = starfield.starfield;
 
         ut.drawTextCentered("raylib-fun", 20, .light_gray);
         //----------------------------------------------------------------------------------
