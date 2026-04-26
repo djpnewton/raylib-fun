@@ -223,22 +223,42 @@ def add_wall(obj, axis, sign):
 # Viewer
 # ---------------------------------------------------------------------------
 
-def view_tiles(tile_paths):
-    """Show all tiles in a single interactive window with Prev/Next buttons."""
+def view_tiles(tile_entries):
+    """Show all tiles in a single interactive window with Prev/Next and type-filter buttons.
+
+    tile_entries: list of (path, tile_type) tuples.
+    """
     import vedo
 
-    state = {"idx": 0}
+    FILTER_CYCLE = [None, GAME_TRACK, GRAVITY_TRACK]
+    FILTER_LABELS = {
+        None:          "Type: All",
+        GAME_TRACK:    "Type: game",
+        GRAVITY_TRACK: "Type: gravity",
+    }
 
     def load_mesh(path):
         m = vedo.load(path)
-        m.flat()                    # per-face shading — reveals groove facets clearly
+        m.flat()
         m.color("#b0c4de")
-        m.lw(1.0).lc("#1a3a5c")    # visible dark edges
-        # add a second copy as a slightly darker ambient shadow mesh
+        m.lw(1.0).lc("#1a3a5c")
         return m
 
-    names = [os.path.basename(p).replace(".obj", "") for p in tile_paths]
-    meshes = [load_mesh(p) for p in tile_paths]
+    all_paths = [p for p, _ in tile_entries]
+    all_types = [t for _, t in tile_entries]
+    all_names = [os.path.basename(p).replace(".obj", "") for p in all_paths]
+    all_meshes = [load_mesh(p) for p in all_paths]
+
+    state = {
+        "filter": None,   # None = show all
+        "idx":    0,      # index into the current filtered list
+    }
+
+    def filtered_indices():
+        f = state["filter"]
+        if f is None:
+            return list(range(len(all_meshes)))
+        return [i for i, t in enumerate(all_types) if t == f]
 
     lights = [
         vedo.Light(pos=( 3,  5,  3), focal_point=(0, 0, 0), c="white",   intensity=1.0),
@@ -246,38 +266,60 @@ def view_tiles(tile_paths):
         vedo.Light(pos=( 0, -3,  0), focal_point=(0, 0, 0), c="#334455", intensity=0.2),
     ]
 
-    plt = vedo.Plotter(title=names[0], axes=1, bg="#1a1a2e", bg2="#16213e")
-    plt.show(meshes[0], *lights, viewup="y", interactive=False)
+    first_mesh = all_meshes[0]
+    plt = vedo.Plotter(title=all_names[0], axes=1, bg="#1a1a2e", bg2="#16213e")
+    plt.show(first_mesh, *lights, viewup="y", interactive=False)
 
-    label = vedo.Text2D(names[0], pos="top-center", s=1.4, c="white", bg="k5")
+    label = vedo.Text2D(all_names[0], pos="top-center", s=1.4, c="white", bg="k5")
     plt.add(label)
 
-    def update(new_idx):
-        state["idx"] = new_idx % len(meshes)
-        i = state["idx"]
-        for m in meshes:
+    def show_current():
+        idxs = filtered_indices()
+        if not idxs:
+            return
+        state["idx"] = state["idx"] % len(idxs)
+        real_i = idxs[state["idx"]]
+        for m in all_meshes:
             plt.remove(m)
-        plt.add(meshes[i])
-        label.text(names[i])
+        plt.add(all_meshes[real_i])
+        label.text(all_names[real_i])
         plt.render()
 
     def on_next(obj, _):
-        update(state["idx"] + 1)
+        state["idx"] += 1
+        show_current()
 
     def on_prev(obj, _):
-        update(state["idx"] - 1)
+        state["idx"] -= 1
+        show_current()
+
+    def on_filter(obj, _):
+        cur = FILTER_CYCLE.index(state["filter"])
+        state["filter"] = FILTER_CYCLE[(cur + 1) % len(FILTER_CYCLE)]
+        state["idx"] = 0
+        btn_filter.status(FILTER_LABELS[state["filter"]])
+        show_current()
 
     btn_next = plt.add_button(on_next, pos=(0.92, 0.06), states=["Next ▶"],
                               c=["white"], bc=["#3a7ebf"], size=18)
     btn_prev = plt.add_button(on_prev, pos=(0.08, 0.06), states=["◀ Prev"],
                               c=["white"], bc=["#3a7ebf"], size=18)
 
+    filter_states = list(FILTER_LABELS.values())
+    btn_filter = plt.add_button(on_filter, pos=(0.50, 0.06),
+                                states=filter_states,
+                                c=["white"] * len(filter_states),
+                                bc=["#2e6b3e"] * len(filter_states),
+                                size=18)
+
     # Also support left/right arrow keys
     def on_key(evt):
         if evt.keypress == "Right":
-            update(state["idx"] + 1)
+            state["idx"] += 1
+            show_current()
         elif evt.keypress == "Left":
-            update(state["idx"] - 1)
+            state["idx"] -= 1
+            show_current()
 
     plt.add_callback("KeyPress", on_key)
     plt.interactive().close()
@@ -384,11 +426,13 @@ def channel_cross_section(t=1.0):
     return pts
 
 
-def add_channel_surface(obj, z0, z1, t0=1.0, t1=1.0, y_base0=1.0, y_base1=1.0):
+def add_channel_surface(obj, z0, z1, t0=1.0, t1=1.0, y_base0=1.0, y_base1=1.0,
+                        y_bot0=0.0, y_bot1=0.0):
     """Add a ruled quad-strip top surface between two Z positions.
 
     The cross-section at z=z0 has blend factor t0 and at z=z1 has blend t1.
     y_base0/y_base1 shift the cross-section vertically (default 1.0 = normal height).
+    y_bot0/y_bot1 set the bottom-face elevation at each end (default 0 = flat base).
     Also adds the bottom face, the four side faces (+X/-X at each end if needed).
     """
     sec0 = [(x, y - 1.0 + y_base0) for x, y in channel_cross_section(t0)]
@@ -420,10 +464,14 @@ def add_channel_surface(obj, z0, z1, t0=1.0, t1=1.0, y_base0=1.0, y_base1=1.0):
         # CCW from +Y side: row0[i], row1[i], row1[i+1], row0[i+1]
         obj.quad(row0[i], row1[i], row1[i+1], row0[i+1], nx, ny, nz)
 
-    # Bottom face (flat, normal -Y)
-    bv0 = [obj.v(sec0[0][0], 0.0, z0), obj.v(sec0[-1][0], 0.0, z0)]
-    bv1 = [obj.v(sec1[0][0], 0.0, z1), obj.v(sec1[-1][0], 0.0, z1)]
-    obj.quad(bv0[0], bv0[1], bv1[1], bv1[0], 0, -1, 0)
+    # Bottom face — may be sloped if y_bot0 != y_bot1
+    bv0 = [obj.v(sec0[0][0], y_bot0, z0), obj.v(sec0[-1][0], y_bot0, z0)]
+    bv1 = [obj.v(sec1[0][0], y_bot1, z1), obj.v(sec1[-1][0], y_bot1, z1)]
+    # Normal: perpendicular to the sloped bottom plane
+    dz = z1 - z0;  dy_bot = y_bot1 - y_bot0
+    bot_mag = math.sqrt(dz*dz + dy_bot*dy_bot)
+    bn_y, bn_z = (-dz / bot_mag, dy_bot / bot_mag) if bot_mag > 1e-9 else (-1.0, 0.0)
+    obj.quad(bv0[0], bv0[1], bv1[1], bv1[0], 0, bn_y, bn_z)
 
     # -X side wall
     obj.quad(bv0[0], bv1[0], row1[0], row0[0], -1, 0, 0)
@@ -431,16 +479,9 @@ def add_channel_surface(obj, z0, z1, t0=1.0, t1=1.0, y_base0=1.0, y_base1=1.0):
     obj.quad(bv0[1], row0[-1], row1[-1], bv1[1], +1, 0, 0)
 
     # -Z end cap
-    end0_bot_l = obj.v(sec0[0][0],  0.0, z0)
-    end0_bot_r = obj.v(sec0[-1][0], 0.0, z0)
-    for i in range(n - 1):
-        # triangle fan from bottom-left for simplicity
-        pass
-    # build the -Z end cap as a polygon face (works for convex sections)
     end0_verts = [obj.v(x, y, z0) for x, y in reversed(sec0)]
-    end0_bot   = [obj.v(-1.0, 0.0, z0), obj.v(1.0, 0.0, z0)]
-    # Fan from bottom centre
-    bcv = obj.v(0.0, 0.0, z0)
+    end0_bot   = [obj.v(-1.0, y_bot0, z0), obj.v(1.0, y_bot0, z0)]
+    bcv = obj.v(0.0, y_bot0, z0)
     obj.tri(bcv, end0_bot[0], end0_verts[-1], 0, 0, -1)
     for i in range(len(end0_verts) - 1):
         obj.tri(bcv, end0_verts[i+1], end0_verts[i], 0, 0, -1)
@@ -448,11 +489,11 @@ def add_channel_surface(obj, z0, z1, t0=1.0, t1=1.0, y_base0=1.0, y_base1=1.0):
 
     # +Z end cap
     end1_verts = [obj.v(x, y, z1) for x, y in sec1]
-    bcv1 = obj.v(0.0, 0.0, z1)
-    obj.tri(bcv1, obj.v(-1.0, 0.0, z1), end1_verts[0], 0, 0, +1)
+    bcv1 = obj.v(0.0, y_bot1, z1)
+    obj.tri(bcv1, obj.v(-1.0, y_bot1, z1), end1_verts[0], 0, 0, +1)
     for i in range(len(end1_verts) - 1):
         obj.tri(bcv1, end1_verts[i], end1_verts[i+1], 0, 0, +1)
-    obj.tri(bcv1, end1_verts[-1], obj.v(1.0, 0.0, z1), 0, 0, +1)
+    obj.tri(bcv1, end1_verts[-1], obj.v(1.0, y_bot1, z1), 0, 0, +1)
 
 
 def generate_ramp_tile():
@@ -466,10 +507,11 @@ def generate_ramp_tile():
     LOW  = 1.0   # channel height at -Z end (matches standard tiles at y=0..1)
     HIGH = 2.0   # channel height at +Z end (matches elevated tiles at y=1..2)
     add_channel_surface(obj, z0=-1.0, z1=1.0, t0=1.0, t1=1.0,
-                        y_base0=LOW, y_base1=HIGH)
+                        y_base0=LOW, y_base1=HIGH,
+                        y_bot0=0.0, y_bot1=HIGH - LOW)
     # Low (-Z) end: face spans y=0..1, center at y=0.5 — standard channel socket
     add_connectors(obj,  0.0, 0.5, -1.0, (0, 0, -1), count=3)
-    # High (+Z) end: face spans y=0..2, connector dot at y=1.5
+    # High (+Z) end: face spans y=1..2, connector dot at y=1.5
     add_connectors(obj,  0.0, 1.5, +1.0, (0, 0, +1), count=3)
     obj.write("ramp_tile.obj")
     return obj
@@ -479,38 +521,31 @@ CURVE_SEGS = 24   # arc resolution for the channel curve tile
 
 
 def generate_curve_tile():
-    """Curve tile: 4×4 footprint (x/z: -2..2), channel curves 90° from -Z face to +X face.
+    """Curve tile: annular sector footprint, channel curves 90° from -Z face to +X face.
 
-    Arc centre is at the inner corner (+2, -2).  R=3 places the centreline
-    at the outer half of each open face: (-1,-2) on -Z, (+2,+1) on +X.
-    At u=-1 (outer groove edge) the channel is flush with the tile boundary.
-
-    Parametrise by angle a going from 180° down to 90°:
-      path P(a) = (CX + R*cos(a),  CZ + R*sin(a))  with CX=2, CZ=-2
-      radial inward = toward centre = (-cos(a), -sin(a))
-      cross-section u=-1 is outer edge, u=+1 is inner edge
+    Arc centre is at (+2, -2).  R=3 places the centreline at the outer half of
+    each open face.  The tile boundary follows the arc rather than a square:
+      outer wall follows R_out = R + 1 = 4 (just past outer rim)
+      inner wall follows R_in  = R - 1 = 2 (just past inner rim)
+    Two flat end caps close the open connector faces as before.
+    Connectors stay at the same world positions so WFC matching is unchanged.
     """
     obj = ObjWriter("curve")
-    FOOT  = 2.0
     R     = 3.0
-    CX    = FOOT    # arc centre x = +2
-    CZ    = -FOOT   # arc centre z = -2
+    CX    = 2.0    # arc centre x
+    CZ    = -2.0   # arc centre z
     Y_TOP = 1.0
+    R_OUT = R + 1.0   # outer boundary radius  = 4
+    R_IN  = R - 1.0   # inner boundary radius  = 2
 
-    cs  = channel_cross_section(1.0)   # (u, v): u in [-1,1] left→right, v in [0,1] bottom→top
+    cs  = channel_cross_section(1.0)   # (u, v): u in [-1,1], v in [0,1]
     ncs = len(cs)
 
     def arc_ring(a):
-        """Cross-section ring at arc angle a.
-
-        Cross-section u axis = radially inward (-cos a, -sin a) in XZ.
-        So u=-1 is the outer rim, u=+1 is the inner rim.
-        """
         cos_a, sin_a = math.cos(a), math.sin(a)
-        px = CX + R * cos_a   # path centre x
-        pz = CZ + R * sin_a   # path centre z
-        # radially inward unit vector in XZ
-        rx, rz = -cos_a, -sin_a
+        px = CX + R * cos_a
+        pz = CZ + R * sin_a
+        rx, rz = -cos_a, -sin_a   # radially inward
         verts = []
         for u, v in cs:
             x = px + u * rx
@@ -519,22 +554,16 @@ def generate_curve_tile():
             verts.append(obj.v(x, y, z))
         return verts
 
-    # Arc from a=180° to a=90° (decreasing angle)
-    a_start = math.pi          # 180° → path at (0, -2): -Z face centre
-    a_end   = math.pi * 0.5   # 90°  → path at (2,  0): +X face centre
+    a_start = math.pi        # 180° → -Z face
+    a_end   = math.pi * 0.5  # 90°  → +X face
     steps   = CURVE_SEGS
 
     angles = [a_start + (a_end - a_start) * i / steps for i in range(steps + 1)]
     rings  = [arc_ring(a) for a in angles]
 
-    # Top surface quads — travel goes from a_start to a_end (decreasing a)
-    # At a=180° cross-section right=(+1,0) so u=-1 is outer (-X), u=+1 inner (+X)
-    # Wind CCW from above: r0[i], r0[i+1], r1[i+1], r1[i]
+    # ── Channel surface quads ──────────────────────────────────────────────
     for s in range(steps):
         r0, r1 = rings[s], rings[s + 1]
-        a_mid  = (angles[s] + angles[s + 1]) * 0.5
-        cos_a, sin_a = math.cos(a_mid), math.sin(a_mid)
-        rx_mid, rz_mid = -cos_a, -sin_a   # inward radial
         for i in range(ncs - 1):
             p00 = obj._verts[r0[i]   - 1]
             p01 = obj._verts[r0[i+1] - 1]
@@ -543,61 +572,87 @@ def generate_curve_tile():
             e2 = (p10[0]-p00[0], p10[1]-p00[1], p10[2]-p00[2])
             nx, ny, nz = cross(e2, e1)
             mag = math.sqrt(nx*nx + ny*ny + nz*nz)
-            if mag < 1e-9:
-                nx, ny, nz = 0.0, 1.0, 0.0
-            else:
-                nx, ny, nz = nx/mag, ny/mag, nz/mag
+            nx, ny, nz = (0, 1, 0) if mag < 1e-9 else (nx/mag, ny/mag, nz/mag)
             obj.quad(r0[i], r1[i], r1[i+1], r0[i+1], nx, ny, nz)
 
-    # Bottom face (normal -Y)
-    bvs = [
-        obj.v(-FOOT, 0, -FOOT), obj.v( FOOT, 0, -FOOT),
-        obj.v( FOOT, 0,  FOOT), obj.v(-FOOT, 0,  FOOT),
-    ]
-    obj.quad(bvs[0], bvs[3], bvs[2], bvs[1], 0, -1, 0)
+    # ── Top fill between inner rim and inner boundary ─────────────────────
+    # inner rim verts: rings[s][-1]  (u=+1, at radius R_IN from centre)
+    for s in range(steps):
+        # Triangle between consecutive inner-rim points at top
+        a0, a1 = angles[s], angles[s+1]
+        # inner boundary arc point at top
+        ib0 = obj.v(CX + R_IN * math.cos(a0), Y_TOP, CZ + R_IN * math.sin(a0))
+        ib1 = obj.v(CX + R_IN * math.cos(a1), Y_TOP, CZ + R_IN * math.sin(a1))
+        rim0 = rings[s][-1]
+        rim1 = rings[s+1][-1]
+        obj.quad(rim0, ib0, ib1, rim1, 0, 1, 0)
 
-    # Closed side walls on the two non-opening faces
-    # -X face (x=-2): full wall, no channel opening
-    obj.quad(obj.v(-FOOT,0,-FOOT), obj.v(-FOOT,0, FOOT),
-             obj.v(-FOOT,Y_TOP,FOOT), obj.v(-FOOT,Y_TOP,-FOOT), -1,0,0)
-    # +Z face (z=+2): full wall, no channel opening
-    obj.quad(obj.v(-FOOT,0,FOOT), obj.v(FOOT,0,FOOT),
-             obj.v(FOOT,Y_TOP,FOOT), obj.v(-FOOT,Y_TOP,FOOT), 0,0,+1)
+    # ── Top fill between outer rim and outer boundary ─────────────────────
+    for s in range(steps):
+        a0, a1 = angles[s], angles[s+1]
+        ob0 = obj.v(CX + R_OUT * math.cos(a0), Y_TOP, CZ + R_OUT * math.sin(a0))
+        ob1 = obj.v(CX + R_OUT * math.cos(a1), Y_TOP, CZ + R_OUT * math.sin(a1))
+        rim0 = rings[s][0]
+        rim1 = rings[s+1][0]
+        obj.quad(rim1, ob1, ob0, rim0, 0, 1, 0)
 
-    # -Z end cap: groove at x=-2..0 (outer half), z=-2  (a=180°: path x=-1, rx=(+1,0))
-    # x = path_x + u*rx = -1+u, so u=-1→x=-2 (tile edge), u=+1→x=0
-    # Right fill panel covers the inner half (x=0..+2)
-    obj.quad(obj.v(0.0,0,-FOOT), obj.v(0.0,Y_TOP,-FOOT),
-             obj.v(FOOT,Y_TOP,-FOOT), obj.v(FOOT,0,-FOOT), 0,0,-1)
-    # Groove profile: quads from y=0 up to cross-section
-    cs_z = [(u - 1.0, v * Y_TOP) for u, v in cs]   # x = u-1, range [-2, 0]
+    # ── Bottom face: annular sector, triangulated as inner+outer strip ────
+    for s in range(steps):
+        a0, a1 = angles[s], angles[s+1]
+        ib0 = obj.v(CX + R_IN  * math.cos(a0), 0, CZ + R_IN  * math.sin(a0))
+        ib1 = obj.v(CX + R_IN  * math.cos(a1), 0, CZ + R_IN  * math.sin(a1))
+        ob0 = obj.v(CX + R_OUT * math.cos(a0), 0, CZ + R_OUT * math.sin(a0))
+        ob1 = obj.v(CX + R_OUT * math.cos(a1), 0, CZ + R_OUT * math.sin(a1))
+        # CCW from below (-Y):
+        obj.quad(ib0, ob0, ob1, ib1, 0, -1, 0)
+
+    # ── Outer curved wall (normal points outward radially) ────────────────
+    for s in range(steps):
+        a_mid = (angles[s] + angles[s+1]) * 0.5
+        cos_m, sin_m = math.cos(a_mid), math.sin(a_mid)
+        a0, a1 = angles[s], angles[s+1]
+        ob0_b = obj.v(CX + R_OUT * math.cos(a0), 0,     CZ + R_OUT * math.sin(a0))
+        ob0_t = obj.v(CX + R_OUT * math.cos(a0), Y_TOP, CZ + R_OUT * math.sin(a0))
+        ob1_b = obj.v(CX + R_OUT * math.cos(a1), 0,     CZ + R_OUT * math.sin(a1))
+        ob1_t = obj.v(CX + R_OUT * math.cos(a1), Y_TOP, CZ + R_OUT * math.sin(a1))
+        # outward normal = away from arc centre
+        obj.quad(ob0_b, ob1_b, ob1_t, ob0_t, cos_m, 0, sin_m)
+
+    # ── Inner curved wall (normal points inward toward arc centre) ────────
+    for s in range(steps):
+        a_mid = (angles[s] + angles[s+1]) * 0.5
+        cos_m, sin_m = math.cos(a_mid), math.sin(a_mid)
+        a0, a1 = angles[s], angles[s+1]
+        ib0_b = obj.v(CX + R_IN * math.cos(a0), 0,     CZ + R_IN * math.sin(a0))
+        ib0_t = obj.v(CX + R_IN * math.cos(a0), Y_TOP, CZ + R_IN * math.sin(a0))
+        ib1_b = obj.v(CX + R_IN * math.cos(a1), 0,     CZ + R_IN * math.sin(a1))
+        ib1_t = obj.v(CX + R_IN * math.cos(a1), Y_TOP, CZ + R_IN * math.sin(a1))
+        # inward normal = toward arc centre
+        obj.quad(ib1_b, ib0_b, ib0_t, ib1_t, -cos_m, 0, -sin_m)
+
+    # ── -Z end cap  (a=180°: path at x=-1, z=-2; outer at x=-4,z=-2; inner at x=+2,z=-2 → but inner clamped to channel) ──
+    # The open face spans x = R_IN*cos(180°)+CX .. R_OUT*cos(180°)+CX  = (2-2)..(2-4) → x in [-2, 0]
+    # But channel inner rim is at x=0, outer at x=-2, so the face is x in [-2, 0], z=-2.
+    # Fill panel from inner rim (x=0) to inner arc boundary (x=+2) is NOT part of the
+    # open face — the channel only spans x in [-2, 0] at the -Z face.
+    # Close the -Z end cap with groove profile:
+    cs_z = [(u - 1.0, v * Y_TOP) for u, v in cs]   # x = path_x(180°) + u*rx = (-1)+u*(+1) = u-1; range [-2, 0]
     for i in range(len(cs_z) - 1, 0, -1):
         x1, y1 = cs_z[i];   x0, y0 = cs_z[i-1]
-        obj.quad(obj.v(x0,0,-FOOT), obj.v(x0,y0,-FOOT),
-                 obj.v(x1,y1,-FOOT), obj.v(x1,0,-FOOT), 0,0,-1)
+        obj.quad(obj.v(x0,0,-2), obj.v(x0,y0,-2),
+                 obj.v(x1,y1,-2), obj.v(x1,0,-2), 0, 0, -1)
 
-    # +X end cap: groove at z=0..+2 (outer half), x=+2  (a=90°: path z=+1, rx=(0,-1))
-    # z = path_z + u*rz = 1-u, so u=-1→z=+2 (tile edge), u=+1→z=0
-    # Near fill panel covers the inner half (z=-2..0)
-    obj.quad(obj.v(FOOT,0,-FOOT), obj.v(FOOT,Y_TOP,-FOOT),
-             obj.v(FOOT,Y_TOP, 0.0), obj.v(FOOT,0, 0.0), +1,0,0)
-    # Groove profile: z decreases 2→0 as i increases; use (A,B,C,D)=(F,0,z0),(F,0,z1),(F,y1,z1),(F,y0,z0)
-    # so that (B-A)×(C-A) = +X with z0>z1
+    # ── +X end cap  (a=90°: path at x=+2, z=+1; outer at x=2,z=4; inner at x=2,z=-2 → clamped) ──
+    # Channel spans z in [0, +2] at x=+2  (u=-1→z=+2, u=+1→z=0)
     cs_x = [(1.0 - u, v * Y_TOP) for u, v in cs]   # (z, y), z descends 2→0
     for i in range(len(cs_x) - 1):
-        z0, y0 = cs_x[i];   z1, y1 = cs_x[i+1]   # z0 > z1
-        obj.quad(obj.v(FOOT,0,z0), obj.v(FOOT,0,z1),
-                 obj.v(FOOT,y1,z1), obj.v(FOOT,y0,z0), +1,0,0)
+        z0v, y0v = cs_x[i];   z1v, y1v = cs_x[i+1]
+        obj.quad(obj.v(2,0,z0v), obj.v(2,0,z1v),
+                 obj.v(2,y1v,z1v), obj.v(2,y0v,z0v), +1, 0, 0)
 
-    # Connectors — channel on outer half of open faces; flat on all other half-face slots
-    add_connectors(obj, -1.0, 0.5, -FOOT, (0, 0, -1), count=3)   # -Z outer half (channel)
-    add_connectors(obj, FOOT, 0.5,  +1.0, (+1, 0,  0), count=3)  # +X outer half (channel)
-    add_connectors(obj, +1.0, 0.5, -FOOT, (0, 0, -1))             # -Z inner half (flat)
-    add_connectors(obj, FOOT, 0.5,  -1.0, (+1, 0,  0))            # +X inner half (flat)
-    add_connectors(obj, -FOOT, 0.5, -1.0, (-1, 0,  0))            # -X near half (flat)
-    add_connectors(obj, -FOOT, 0.5, +1.0, (-1, 0,  0))            # -X far half (flat)
-    add_connectors(obj, -1.0, 0.5, +FOOT, (0, 0, +1))             # +Z left half (flat)
-    add_connectors(obj, +1.0, 0.5, +FOOT, (0, 0, +1))             # +Z right half (flat)
+    # Connectors — channel entry/exit only (same world positions as before)
+    add_connectors(obj, -1.0, 0.5, -2.0, (0, 0, -1), count=3)   # -Z channel entry
+    add_connectors(obj,  2.0, 0.5, +1.0, (+1, 0,  0), count=3)  # +X channel exit
 
     obj.write("curve_tile.obj")
     return obj
@@ -655,8 +710,6 @@ def generate_channel_tile():
     """Channel tile: full semicircular groove running along Z, open on ±Z."""
     obj = ObjWriter("channel")
     add_channel_surface(obj, z0=-1.0, z1=1.0, t0=1.0, t1=1.0)
-    add_connectors(obj, +1.0, 0.5, 0.0, (+1,  0,  0))          # flat side
-    add_connectors(obj, -1.0, 0.5, 0.0, (-1,  0,  0))          # flat side
     add_connectors(obj,  0.0, 0.5, +1.0, ( 0,  0, +1), count=3)  # channel end
     add_connectors(obj,  0.0, 0.5, -1.0, ( 0,  0, -1), count=3)  # channel end
     obj.write("channel_tile.obj")
@@ -711,9 +764,9 @@ if __name__ == "__main__":
     print(f"Written: {meta_path}")
 
     if args.view:
-        paths = [os.path.join(OUTPUT_DIR, f) for f, _, __ in TILES]
+        entries = [(os.path.join(OUTPUT_DIR, f), t) for f, _, t in TILES]
         if args.tile:
-            paths = [os.path.join(OUTPUT_DIR, args.tile)]
-        view_tiles(paths)
+            entries = [(os.path.join(OUTPUT_DIR, args.tile), next(t for f, _, t in TILES if f == args.tile))]
+        view_tiles(entries)
 
     print("Done.")

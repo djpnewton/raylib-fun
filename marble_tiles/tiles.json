@@ -149,32 +149,6 @@
       "connectors": [
         {
           "position": [
-            1.0,
-            0.5,
-            0.0
-          ],
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
-            -1.0,
-            0.5,
-            0.0
-          ],
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
             0.0,
             0.5,
             1.0
@@ -326,84 +300,6 @@
             0
           ],
           "socket": "channel"
-        },
-        {
-          "position": [
-            1.0,
-            0.5,
-            -2.0
-          ],
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
-            2.0,
-            0.5,
-            -1.0
-          ],
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
-            -2.0,
-            0.5,
-            -1.0
-          ],
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
-            -2.0,
-            0.5,
-            1.0
-          ],
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
-            -1.0,
-            0.5,
-            2.0
-          ],
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "socket": "flat"
-        },
-        {
-          "position": [
-            1.0,
-            0.5,
-            2.0
-          ],
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "socket": "flat"
         }
       ]
     },
