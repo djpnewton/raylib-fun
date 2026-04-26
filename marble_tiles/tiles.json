@@ -1,0 +1,453 @@
+{
+  "tiles": [
+    {
+      "name": "base",
+      "file": "base_tile.obj",
+      "type": "game_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            1.0
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "flat"
+        }
+      ]
+    },
+    {
+      "name": "wall",
+      "file": "wall_tile.obj",
+      "type": "game_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "flat"
+        }
+      ]
+    },
+    {
+      "name": "corner",
+      "file": "corner_tile.obj",
+      "type": "game_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            -1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "flat"
+        }
+      ]
+    },
+    {
+      "name": "channel",
+      "file": "channel_tile.obj",
+      "type": "gravity_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            1.0
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "socket": "channel"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "channel"
+        }
+      ]
+    },
+    {
+      "name": "bridge",
+      "file": "bridge_tile.obj",
+      "type": "game_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -1.0,
+            0.5,
+            0.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            1.0
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "socket": "channel"
+        },
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "flat"
+        }
+      ]
+    },
+    {
+      "name": "ramp",
+      "file": "ramp_tile.obj",
+      "type": "gravity_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "channel"
+        },
+        {
+          "position": [
+            0.0,
+            1.5,
+            1.0
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "socket": "channel"
+        }
+      ]
+    },
+    {
+      "name": "curve",
+      "file": "curve_tile.obj",
+      "type": "gravity_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            -1.0,
+            0.5,
+            -2.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "channel"
+        },
+        {
+          "position": [
+            2.0,
+            0.5,
+            1.0
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "socket": "channel"
+        },
+        {
+          "position": [
+            1.0,
+            0.5,
+            -2.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            2.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -2.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -2.0,
+            0.5,
+            1.0
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            -1.0,
+            0.5,
+            2.0
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "socket": "flat"
+        },
+        {
+          "position": [
+            1.0,
+            0.5,
+            2.0
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "socket": "flat"
+        }
+      ]
+    },
+    {
+      "name": "start",
+      "file": "start_tile.obj",
+      "type": "gravity_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "channel"
+        }
+      ]
+    },
+    {
+      "name": "end",
+      "file": "end_tile.obj",
+      "type": "gravity_track",
+      "weight": 1,
+      "connectors": [
+        {
+          "position": [
+            0.0,
+            0.5,
+            -1.0
+          ],
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "socket": "channel"
+        }
+      ]
+    }
+  ]
+}

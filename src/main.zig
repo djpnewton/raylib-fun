@@ -8,6 +8,7 @@ const life = @import("life.zig");
 const raycast = @import("raycast.zig");
 const wfc = @import("wfc.zig");
 const starfield = @import("starfield.zig");
+const marble = @import("marble.zig");
 
 pub fn main(init: std.process.Init) !void {
     // Initialization
@@ -57,6 +58,9 @@ pub fn main(init: std.process.Init) !void {
         y += ut.button_height + ut.button_spacing;
         if (ut.btn(x, y, btn_width, ut.button_height, "Starfield"))
             demo = starfield.starfield;
+        y += ut.button_height + ut.button_spacing;
+        if (ut.btn(x, y, btn_width, ut.button_height, "Marble Track"))
+            demo = marble.marble;
 
         ut.drawTextCentered("raylib-fun", 20, .light_gray);
         //----------------------------------------------------------------------------------
