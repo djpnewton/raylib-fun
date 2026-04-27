@@ -531,10 +531,11 @@ def generate_curve_tile():
     Connectors stay at the same world positions so WFC matching is unchanged.
     """
     obj = ObjWriter("curve")
-    R     = 3.0
-    CX    = 2.0    # arc centre x
-    CZ    = -2.0   # arc centre z
-    Y_TOP = 1.0
+    R         = 3.0
+    CX        = 2.0    # arc centre x
+    CZ        = -2.0   # arc centre z
+    Y_TOP     = 1.0
+    Y_LIP_OUT = 1.1   # extra height for the outer (centrifugal) lip
     R_OUT = R + 1.0   # outer boundary radius  = 4
     R_IN  = R - 1.0   # inner boundary radius  = 2
 
@@ -587,14 +588,17 @@ def generate_curve_tile():
         rim1 = rings[s+1][-1]
         obj.quad(rim0, ib0, ib1, rim1, 0, 1, 0)
 
-    # ── Top fill between outer rim and outer boundary ─────────────────────
+    # ── Inner face of raised outer lip (Y_TOP → Y_LIP_OUT, faces inward) ──
     for s in range(steps):
+        a_mid = (angles[s] + angles[s+1]) * 0.5
+        cos_m, sin_m = math.cos(a_mid), math.sin(a_mid)
         a0, a1 = angles[s], angles[s+1]
-        ob0 = obj.v(CX + R_OUT * math.cos(a0), Y_TOP, CZ + R_OUT * math.sin(a0))
-        ob1 = obj.v(CX + R_OUT * math.cos(a1), Y_TOP, CZ + R_OUT * math.sin(a1))
-        rim0 = rings[s][0]
-        rim1 = rings[s+1][0]
-        obj.quad(rim1, ob1, ob0, rim0, 0, 1, 0)
+        ob0_lo = obj.v(CX + R_OUT * math.cos(a0), Y_TOP,     CZ + R_OUT * math.sin(a0))
+        ob0_hi = obj.v(CX + R_OUT * math.cos(a0), Y_LIP_OUT, CZ + R_OUT * math.sin(a0))
+        ob1_lo = obj.v(CX + R_OUT * math.cos(a1), Y_TOP,     CZ + R_OUT * math.sin(a1))
+        ob1_hi = obj.v(CX + R_OUT * math.cos(a1), Y_LIP_OUT, CZ + R_OUT * math.sin(a1))
+        # inward normal = toward arc centre
+        obj.quad(ob1_lo, ob0_lo, ob0_hi, ob1_hi, -cos_m, 0, -sin_m)
 
     # ── Bottom face: annular sector, triangulated as inner+outer strip ────
     for s in range(steps):
@@ -611,10 +615,10 @@ def generate_curve_tile():
         a_mid = (angles[s] + angles[s+1]) * 0.5
         cos_m, sin_m = math.cos(a_mid), math.sin(a_mid)
         a0, a1 = angles[s], angles[s+1]
-        ob0_b = obj.v(CX + R_OUT * math.cos(a0), 0,     CZ + R_OUT * math.sin(a0))
-        ob0_t = obj.v(CX + R_OUT * math.cos(a0), Y_TOP, CZ + R_OUT * math.sin(a0))
-        ob1_b = obj.v(CX + R_OUT * math.cos(a1), 0,     CZ + R_OUT * math.sin(a1))
-        ob1_t = obj.v(CX + R_OUT * math.cos(a1), Y_TOP, CZ + R_OUT * math.sin(a1))
+        ob0_b = obj.v(CX + R_OUT * math.cos(a0), 0,         CZ + R_OUT * math.sin(a0))
+        ob0_t = obj.v(CX + R_OUT * math.cos(a0), Y_LIP_OUT, CZ + R_OUT * math.sin(a0))
+        ob1_b = obj.v(CX + R_OUT * math.cos(a1), 0,         CZ + R_OUT * math.sin(a1))
+        ob1_t = obj.v(CX + R_OUT * math.cos(a1), Y_LIP_OUT, CZ + R_OUT * math.sin(a1))
         # outward normal = away from arc centre
         obj.quad(ob0_b, ob1_b, ob1_t, ob0_t, cos_m, 0, sin_m)
 

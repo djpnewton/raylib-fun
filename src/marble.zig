@@ -4,6 +4,7 @@ const rl = @import("raylib");
 const rg = @import("raygui");
 
 const ut = @import("utils.zig");
+const phs = @import("phs.zig");
 
 const is_web = builtin.target.os.tag == .emscripten;
 
@@ -126,6 +127,133 @@ else
     \\    finalColor = vec4(lighting * texelColor.rgb, texelColor.a);
     \\}
 ;
+
+// Oil-slick iridescence shader for the marble.
+// Dark near-black base with view-angle-dependent rainbow thin-film color and
+// very sharp specular highlights.
+const marble_fs_src: [:0]const u8 = if (is_web)
+    \\#version 300 es
+    \\precision mediump float;
+    \\#define NUM_LIGHTS 5
+    \\in vec3 fragPos;
+    \\in vec3 fragNormal;
+    \\uniform vec3 viewPos;
+    \\uniform vec3 lightPositions[NUM_LIGHTS];
+    \\uniform vec3 lightColors[NUM_LIGHTS];
+    \\uniform vec4 ambient;
+    \\out vec4 finalColor;
+    \\vec3 hsv2rgb(float h, float s, float v) {
+    \\    float c = v * s;
+    \\    float x = c * (1.0 - abs(mod(h * 6.0, 2.0) - 1.0));
+    \\    float m = v - c;
+    \\    int hi = int(mod(h * 6.0, 6.0));
+    \\    vec3 rgb;
+    \\    if (hi == 0) rgb = vec3(c, x, 0.0);
+    \\    else if (hi == 1) rgb = vec3(x, c, 0.0);
+    \\    else if (hi == 2) rgb = vec3(0.0, c, x);
+    \\    else if (hi == 3) rgb = vec3(0.0, x, c);
+    \\    else if (hi == 4) rgb = vec3(x, 0.0, c);
+    \\    else rgb = vec3(c, 0.0, x);
+    \\    return rgb + vec3(m);
+    \\}
+    \\// Multi-octave sine turbulence for wavy iridescent colour patches
+    \\float turbulence(vec3 n) {
+    \\    float t = 0.0;
+    \\    t += sin(n.x * 4.1 + n.y * 2.7 + n.z * 3.3) * 0.500;
+    \\    t += sin(n.x * 8.3 - n.y * 6.1 + n.z * 5.7) * 0.250;
+    \\    t += sin(n.x *17.9 + n.y *11.3 - n.z * 9.1) * 0.125;
+    \\    t += sin(n.x *37.1 - n.y *23.7 + n.z *19.3) * 0.063;
+    \\    return t;
+    \\}
+    \\void main() {
+    \\    vec3 norm = normalize(fragNormal);
+    \\    vec3 viewDir = normalize(viewPos - fragPos);
+    \\    float ndv = max(dot(norm, viewDir), 0.0);
+    \\    float turb = turbulence(norm);
+    \\    float hue = mod((1.0 - ndv) * 2.5 + turb * 0.9, 1.0);
+    \\    vec3 irid = hsv2rgb(hue, 1.0, 1.0);
+    \\    float fresnel = pow(1.0 - ndv, 1.2);
+    \\    float irid_weight = 0.4 + fresnel * 0.6;
+    \\    vec3 base_color = vec3(0.02, 0.01, 0.03);
+    \\    vec3 surface = mix(base_color, irid, irid_weight);
+    \\    float diff_acc = 0.0;
+    \\    vec3 spec_acc = vec3(0.0);
+    \\    for (int i = 0; i < NUM_LIGHTS; i++) {
+    \\        vec3 lightDir = normalize(lightPositions[i] - fragPos);
+    \\        float diff = max(dot(norm, lightDir), 0.0);
+    \\        vec3 halfDir = normalize(lightDir + viewDir);
+    \\        float spec = pow(max(dot(norm, halfDir), 0.0), 256.0);
+    \\        float dist = length(lightPositions[i] - fragPos);
+    \\        float atten = 1.0 / (1.0 + 0.08 * dist);
+    \\        diff_acc += diff * atten;
+    \\        spec_acc += spec * atten * lightColors[i];
+    \\    }
+    \\    float lighting = 0.35 + diff_acc * 0.2;
+    \\    finalColor = vec4(surface * lighting + spec_acc, 1.0);
+    \\}
+else
+    \\#version 330
+    \\#define NUM_LIGHTS 5
+    \\in vec3 fragPos;
+    \\in vec3 fragNormal;
+    \\uniform vec3 viewPos;
+    \\uniform vec3 lightPositions[NUM_LIGHTS];
+    \\uniform vec3 lightColors[NUM_LIGHTS];
+    \\uniform vec4 ambient;
+    \\out vec4 finalColor;
+    \\vec3 hsv2rgb(float h, float s, float v) {
+    \\    float c = v * s;
+    \\    float x = c * (1.0 - abs(mod(h * 6.0, 2.0) - 1.0));
+    \\    float m = v - c;
+    \\    int hi = int(mod(h * 6.0, 6.0));
+    \\    vec3 rgb;
+    \\    if (hi == 0) rgb = vec3(c, x, 0.0);
+    \\    else if (hi == 1) rgb = vec3(x, c, 0.0);
+    \\    else if (hi == 2) rgb = vec3(0.0, c, x);
+    \\    else if (hi == 3) rgb = vec3(0.0, x, c);
+    \\    else if (hi == 4) rgb = vec3(x, 0.0, c);
+    \\    else rgb = vec3(c, 0.0, x);
+    \\    return rgb + vec3(m);
+    \\}
+    \\// Multi-octave sine turbulence for wavy iridescent colour patches
+    \\float turbulence(vec3 n) {
+    \\    float t = 0.0;
+    \\    t += sin(n.x * 4.1 + n.y * 2.7 + n.z * 3.3) * 0.500;
+    \\    t += sin(n.x * 8.3 - n.y * 6.1 + n.z * 5.7) * 0.250;
+    \\    t += sin(n.x *17.9 + n.y *11.3 - n.z * 9.1) * 0.125;
+    \\    t += sin(n.x *37.1 - n.y *23.7 + n.z *19.3) * 0.063;
+    \\    return t;
+    \\}
+    \\void main() {
+    \\    vec3 norm = normalize(fragNormal);
+    \\    vec3 viewDir = normalize(viewPos - fragPos);
+    \\    float ndv = max(dot(norm, viewDir), 0.0);
+    \\    float turb = turbulence(norm);
+    \\    float hue = mod((1.0 - ndv) * 2.5 + turb * 0.9, 1.0);
+    \\    vec3 irid = hsv2rgb(hue, 1.0, 1.0);
+    \\    float fresnel = pow(1.0 - ndv, 1.2);
+    \\    float irid_weight = 0.4 + fresnel * 0.6;
+    \\    vec3 base_color = vec3(0.02, 0.01, 0.03);
+    \\    vec3 surface = mix(base_color, irid, irid_weight);
+    \\    float diff_acc = 0.0;
+    \\    vec3 spec_acc = vec3(0.0);
+    \\    for (int i = 0; i < NUM_LIGHTS; i++) {
+    \\        vec3 lightDir = normalize(lightPositions[i] - fragPos);
+    \\        float diff = max(dot(norm, lightDir), 0.0);
+    \\        vec3 halfDir = normalize(lightDir + viewDir);
+    \\        float spec = pow(max(dot(norm, halfDir), 0.0), 256.0);
+    \\        float dist = length(lightPositions[i] - fragPos);
+    \\        float atten = 1.0 / (1.0 + 0.08 * dist);
+    \\        diff_acc += diff * atten;
+    \\        spec_acc += spec * atten * lightColors[i];
+    \\    }
+    \\    float lighting = 0.35 + diff_acc * 0.2;
+    \\    finalColor = vec4(surface * lighting + spec_acc, 1.0);
+    \\}
+;
+
+const marble_radius: f32 = 0.5;
+
 const Lighting = struct {
     shader: rl.Shader,
     loc_view_pos: i32,
@@ -158,6 +286,9 @@ const TilePlaced = struct {
     tile: Tile,
     pos: rl.Vector3,
     rotation_y_deg: f32,
+    /// true  = this tile was placed growing forward from the start (marble flows through it top→bottom)
+    /// false = placed growing backward from the end (marble flows through it bottom→top locally)
+    is_downhill: bool = true,
 };
 
 const TilesPlaced = std.ArrayList(TilePlaced);
@@ -182,6 +313,17 @@ const TilesJson = struct {
 
 fn initLighting() !Lighting {
     const shader = try rl.loadShaderFromMemory(vs_src, fs_src);
+    return .{
+        .shader = shader,
+        .loc_view_pos = rl.getShaderLocation(shader, "viewPos"),
+        .loc_light_positions = rl.getShaderLocation(shader, "lightPositions[0]"),
+        .loc_light_colors = rl.getShaderLocation(shader, "lightColors[0]"),
+        .loc_ambient = rl.getShaderLocation(shader, "ambient"),
+    };
+}
+
+fn initMarbleLighting() !Lighting {
+    const shader = try rl.loadShaderFromMemory(vs_src, marble_fs_src);
     return .{
         .shader = shader,
         .loc_view_pos = rl.getShaderLocation(shader, "viewPos"),
@@ -271,6 +413,7 @@ fn initTrack(tiles: Tiles, bounds_pos: rl.Vector3, bounds_width: f32, bounds_hei
                 .tile = tile.*,
                 .pos = .{ .x = bounds_pos.x - bw_half + 1, .y = bounds_pos.y + bh_half - 1, .z = bounds_pos.z + bl_half + 1 },
                 .rotation_y_deg = 0,
+                .is_downhill = true,
             }) catch |err| {
                 std.debug.print("Failed to place start tile: {}\n", .{err});
                 return err;
@@ -281,6 +424,7 @@ fn initTrack(tiles: Tiles, bounds_pos: rl.Vector3, bounds_width: f32, bounds_hei
                 .tile = tile.*,
                 .pos = .{ .x = bounds_pos.x + bw_half - 1, .y = bounds_pos.y - bh_half, .z = bounds_pos.z - bl_half - 1 },
                 .rotation_y_deg = 180,
+                .is_downhill = false,
             }) catch |err| {
                 std.debug.print("Failed to place end tile: {}\n", .{err});
                 return err;
@@ -331,6 +475,8 @@ const OpenConnector = struct {
     pos: rl.Vector3,
     normal: rl.Vector3,
     socket: Socket,
+    /// Inherited from the tile it belongs to.
+    is_downhill: bool = true,
 };
 
 const MAX_DECISIONS = 256;
@@ -339,6 +485,7 @@ const CandidateEntry = struct {
     tile_idx: usize,
     rot: f32,
     pos: rl.Vector3,
+    is_downhill: bool,
 };
 
 const Decision = struct {
@@ -368,7 +515,7 @@ fn collectOpenConnectors(tiles_placed: TilesPlaced, allocator: std.mem.Allocator
                     }
                 }
             }
-            try open.append(allocator, .{ .pos = wpos, .normal = wnorm, .socket = c.socket });
+            try open.append(allocator, .{ .pos = wpos, .normal = wnorm, .socket = c.socket, .is_downhill = tp.is_downhill });
         }
     }
     return open;
@@ -557,6 +704,25 @@ fn allConnectorsSatisfied(tiles_placed: TilesPlaced, new_tp: TilePlaced) bool {
     return true;
 }
 
+/// True if placing `candidate` at `cpos` would put any of its connectors higher than
+/// `incoming_y` — which would mean the track goes up.  Since Y-axis rotation never
+/// changes a vertex's Y component, the world Y of connector `c` is simply cpos.y + c.pos.y.
+fn placementGoesUp(candidate: *const Tile, cpos: rl.Vector3, incoming_y: f32) bool {
+    for (candidate.connectors.items) |c| {
+        if (cpos.y + c.pos.y > incoming_y + 0.01) return true;
+    }
+    return false;
+}
+
+/// True if placing `candidate` at `cpos` would put any of its connectors lower than
+/// `incoming_y` — which would mean the track goes down (bad for uphill/end-side growth).
+fn placementGoesDown(candidate: *const Tile, cpos: rl.Vector3, incoming_y: f32) bool {
+    for (candidate.connectors.items) |c| {
+        if (cpos.y + c.pos.y < incoming_y - 0.01) return true;
+    }
+    return false;
+}
+
 /// Like canFillConnector but also treats `extra_pos` as an occupied position.
 fn canFillConnectorWith(tiles: Tiles, tiles_placed: TilesPlaced, extra_pos: rl.Vector3, oc: OpenConnector, bounds_pos: rl.Vector3, bounds_width: f32, bounds_height: f32, bounds_length: f32) bool {
     const rotations = [_]f32{ 0, 90, 180, 270 };
@@ -569,6 +735,8 @@ fn canFillConnectorWith(tiles: Tiles, tiles_placed: TilesPlaced, extra_pos: rl.V
             if (maybe_pos == null) continue;
             const cpos = maybe_pos.?;
             if (!withinBounds(cpos, rot, candidate_ptr, bounds_pos, bounds_width, bounds_height, bounds_length)) continue;
+            if (oc.is_downhill and placementGoesUp(candidate_ptr, cpos, oc.pos.y)) continue;
+            if (!oc.is_downhill and placementGoesDown(candidate_ptr, cpos, oc.pos.y)) continue;
             if (alreadyOccupied(tiles_placed, cpos)) continue;
             if (posClose(cpos, extra_pos)) continue;
             if (overlapsAnyTile(tiles_placed, cpos, candidate_ptr, rot)) continue;
@@ -601,7 +769,7 @@ fn forwardCheck(tiles: Tiles, tiles_placed: TilesPlaced, new_tp: TilePlaced, bou
         }
         if (matched) continue;
         // This connector will be open — verify it can be filled.
-        const open_c = OpenConnector{ .pos = wpos, .normal = wnorm, .socket = c.socket };
+        const open_c = OpenConnector{ .pos = wpos, .normal = wnorm, .socket = c.socket, .is_downhill = new_tp.is_downhill };
         if (!canFillConnectorWith(tiles, tiles_placed, new_tp.pos, open_c, bounds_pos, bounds_width, bounds_height, bounds_length)) {
             return false;
         }
@@ -661,6 +829,8 @@ fn buildTrack(
                 if (maybe_pos == null) continue;
                 const cpos = maybe_pos.?;
                 if (!withinBounds(cpos, rot, candidate_ptr, bounds_pos, bounds_width, bounds_height, bounds_length)) continue;
+                if (oc.is_downhill and placementGoesUp(candidate_ptr, cpos, oc.pos.y)) continue;
+                if (!oc.is_downhill and placementGoesDown(candidate_ptr, cpos, oc.pos.y)) continue;
                 if (alreadyOccupied(tiles_placed.*, cpos)) continue;
                 if (overlapsAnyTile(tiles_placed.*, cpos, candidate_ptr, rot)) continue;
                 if (!hasVerticalClearance(tiles_placed.*, cpos, candidate_ptr, rot)) continue;
@@ -668,7 +838,7 @@ fn buildTrack(
                 if (!allConnectorsSatisfied(tiles_placed.*, new_tp)) continue;
                 if (!forwardCheck(tiles, tiles_placed.*, new_tp, bounds_pos, bounds_width, bounds_height, bounds_length)) continue;
                 if (n_cands < cands.len) {
-                    cands[n_cands] = .{ .tile_idx = ti, .rot = rot, .pos = cpos };
+                    cands[n_cands] = .{ .tile_idx = ti, .rot = rot, .pos = cpos, .is_downhill = oc.is_downhill };
                     n_cands += 1;
                 }
             }
@@ -702,6 +872,7 @@ fn buildTrack(
                     .tile = tiles.items[c.tile_idx],
                     .pos = c.pos,
                     .rotation_y_deg = c.rot,
+                    .is_downhill = c.is_downhill,
                 });
                 return true;
             } else {
@@ -736,6 +907,7 @@ fn buildTrack(
         .tile = tiles.items[c.tile_idx],
         .pos = c.pos,
         .rotation_y_deg = c.rot,
+        .is_downhill = c.is_downhill,
     });
     return true;
 }
@@ -752,10 +924,12 @@ fn canFillConnector(tiles: Tiles, tiles_placed: TilesPlaced, oc: OpenConnector, 
             if (maybe_pos == null) continue;
             const cpos = maybe_pos.?;
             if (!withinBounds(cpos, rot, candidate_ptr, bounds_pos, bounds_width, bounds_height, bounds_length)) continue;
+            if (oc.is_downhill and placementGoesUp(candidate_ptr, cpos, oc.pos.y)) continue;
+            if (!oc.is_downhill and placementGoesDown(candidate_ptr, cpos, oc.pos.y)) continue;
             if (alreadyOccupied(tiles_placed, cpos)) continue;
             if (overlapsAnyTile(tiles_placed, cpos, candidate_ptr, rot)) continue;
             if (!hasVerticalClearance(tiles_placed, cpos, candidate_ptr, rot)) continue;
-            const new_tp = TilePlaced{ .tile = candidate_ptr.*, .pos = cpos, .rotation_y_deg = rot };
+            const new_tp = TilePlaced{ .tile = candidate_ptr.*, .pos = cpos, .rotation_y_deg = rot, .is_downhill = oc.is_downhill };
             if (!allConnectorsSatisfied(tiles_placed, new_tp)) continue;
             return true;
         }
@@ -763,7 +937,40 @@ fn canFillConnector(tiles: Tiles, tiles_placed: TilesPlaced, oc: OpenConnector, 
     return false;
 }
 
-fn drawTrack(tiles: Tiles, tiles_placed: TilesPlaced, lighting: Lighting, bounds_pos: rl.Vector3, bounds_width: f32, bounds_height: f32, bounds_length: f32) void {
+/// Returns the world position where the marble should rest: at the back (high end)
+/// of the start tile, centred in the groove, just above the rim.
+fn marbleStartPos(tiles_placed: TilesPlaced) ?rl.Vector3 {
+    for (tiles_placed.items) |tp| {
+        const name: []const u8 = std.mem.sliceTo(&tp.tile.name, 0);
+        if (std.mem.startsWith(u8, name, "start")) {
+            // Start tile: local +Z is the closed high end (HIGH = 2.0 in generate.py).
+            // Rotate local (0, 2.0, 1.0) by tile rotation and add to tile world origin.
+            const local = rl.Vector3{ .x = 0.0, .y = 2.0, .z = 1.0 };
+            const rotated = rotateY(local, tp.rotation_y_deg);
+            return .{
+                .x = tp.pos.x + rotated.x,
+                .y = tp.pos.y + rotated.y + marble_radius,
+                .z = tp.pos.z + rotated.z - marble_radius,
+            };
+        }
+    }
+    return null;
+}
+
+fn drawTrack(
+    tiles: Tiles,
+    tiles_placed: TilesPlaced,
+    lighting: Lighting,
+    marble_lighting: ?Lighting,
+    marble_model: ?*rl.Model,
+    marble_visible: bool,
+    marble_follow: bool,
+    marble_pos: ?rl.Vector3,
+    bounds_pos: rl.Vector3,
+    bounds_width: f32,
+    bounds_height: f32,
+    bounds_length: f32,
+) void {
     const S = struct {
         var yaw: f32 = 0.0; // horizontal angle (radians)
         var pitch: f32 = 0.3; // vertical angle (radians, clamped)
@@ -806,7 +1013,13 @@ fn drawTrack(tiles: Tiles, tiles_placed: TilesPlaced, lighting: Lighting, bounds
         S.radius = std.math.clamp(S.radius, 3.0, 50.0);
     }
 
-    const cam_target = rl.Vector3{ .x = bounds_pos.x, .y = bounds_pos.y, .z = bounds_pos.z };
+    const cam_target: rl.Vector3 = if (marble_follow)
+        marble_pos orelse .{ .x = bounds_pos.x, .y = bounds_pos.y, .z = bounds_pos.z }
+    else
+        .{ .x = bounds_pos.x, .y = bounds_pos.y, .z = bounds_pos.z };
+    // Orbit camera around target at S.radius distance using current yaw/pitch.
+    // When following the marble, cam_target tracks the marble so the camera
+    // naturally stays behind/above it as the marble moves.
     const camera_pos = rl.Vector3{
         .x = cam_target.x + S.radius * std.math.cos(S.pitch) * std.math.cos(S.yaw),
         .y = cam_target.y + S.radius * std.math.sin(S.pitch),
@@ -872,7 +1085,96 @@ fn drawTrack(tiles: Tiles, tiles_placed: TilesPlaced, lighting: Lighting, bounds
         }
     }
 
+    // draw marble if visible
+    if (marble_visible) {
+        const mpos = marble_pos orelse marbleStartPos(tiles_placed) orelse null;
+        if (mpos) |pos| {
+            if (marble_lighting) |ml| {
+                if (marble_model) |mm| {
+                    rl.setShaderValue(ml.shader, ml.loc_view_pos, &view_pos, .vec3);
+                    rl.setShaderValueV(ml.shader, ml.loc_light_positions, &light_positions, .vec3, 5);
+                    rl.setShaderValueV(ml.shader, ml.loc_light_colors, &light_colors, .vec3, 5);
+                    rl.setShaderValue(ml.shader, ml.loc_ambient, &ambient, .vec4);
+                    rl.drawModel(mm.*, pos, 1.0, .white);
+                }
+            }
+        }
+    }
+
     rl.endMode3D();
+}
+
+/// Apply a Y-axis rotation to a local-space vertex to get world-space.
+fn rotY(v: [3]f32, deg: f32) [3]f32 {
+    const rad = deg * std.math.pi / 180.0;
+    const c = @cos(rad);
+    const s = @sin(rad);
+    return .{ c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2] };
+}
+
+/// Owns a slice of world-space triangles and a physics state for the marble.
+const PhysicsWorld = struct {
+    tris: []phs.Tri,
+    state: phs.State,
+
+    fn deinit(self: *PhysicsWorld) void {
+        std.heap.c_allocator.free(self.tris);
+        std.heap.c_allocator.destroy(self);
+    }
+};
+
+/// Build a PhysicsWorld by transforming all tile mesh triangles into world space.
+fn initPhysicsWorld(tiles_placed: TilesPlaced, start_pos: rl.Vector3) !*PhysicsWorld {
+    const allocator = std.heap.c_allocator;
+    var tris: std.ArrayList(phs.Tri) = .empty;
+    defer tris.deinit(allocator);
+
+    for (tiles_placed.items) |*tp| {
+        const model = &tp.tile.model;
+        var mi: c_int = 0;
+        while (mi < model.meshCount) : (mi += 1) {
+            const mesh = model.meshes[@intCast(mi)];
+            if (mesh.vertices == null or mesh.triangleCount == 0) continue;
+            const verts = mesh.vertices;
+            const ntri: usize = @intCast(mesh.triangleCount);
+            var ti: usize = 0;
+            while (ti < ntri) : (ti += 1) {
+                var tri: phs.Tri = undefined;
+                for (0..3) |vi| {
+                    const idx: usize = if (mesh.indices != null)
+                        @intCast(mesh.indices[ti * 3 + vi])
+                    else
+                        ti * 3 + vi;
+                    const lx = verts[idx * 3 + 0];
+                    const ly = verts[idx * 3 + 1];
+                    const lz = verts[idx * 3 + 2];
+                    const world = rotY(.{ lx, ly, lz }, tp.rotation_y_deg);
+                    tri.v[vi] = .{
+                        world[0] + tp.pos.x,
+                        world[1] + tp.pos.y,
+                        world[2] + tp.pos.z,
+                    };
+                }
+                // Skip degenerate triangles (zero-area, e.g. from quad corners
+                // where two opposing vertices share the same position in the OBJ).
+                const e1 = [3]f32{ tri.v[1][0] - tri.v[0][0], tri.v[1][1] - tri.v[0][1], tri.v[1][2] - tri.v[0][2] };
+                const e2 = [3]f32{ tri.v[2][0] - tri.v[0][0], tri.v[2][1] - tri.v[0][1], tri.v[2][2] - tri.v[0][2] };
+                const cx = e1[1] * e2[2] - e1[2] * e2[1];
+                const cy = e1[2] * e2[0] - e1[0] * e2[2];
+                const cz = e1[0] * e2[1] - e1[1] * e2[0];
+                if (cx * cx + cy * cy + cz * cz < 1e-12) continue;
+                try tris.append(allocator, tri);
+            }
+        }
+    }
+
+    const pw = try allocator.create(PhysicsWorld);
+    errdefer allocator.destroy(pw);
+    pw.* = .{
+        .tris = try tris.toOwnedSlice(allocator),
+        .state = phs.State.init(.{ start_pos.x, start_pos.y, start_pos.z }),
+    };
+    return pw;
 }
 
 pub fn marble(io: std.Io) bool {
@@ -880,12 +1182,17 @@ pub fn marble(io: std.Io) bool {
         var tiles: ?Tiles = null;
         var tiles_placed: ?TilesPlaced = null;
         var lighting: ?Lighting = null;
+        var marble_lighting: ?Lighting = null;
+        var marble_model: ?rl.Model = null;
+        var marble_visible: bool = false;
+        var marble_follow: bool = false;
         var err: ?[:0]const u8 = null;
         var initialized: bool = false;
         var stack: [MAX_DECISIONS]Decision = undefined;
         var stack_depth: usize = 0;
         var track_done: bool = false;
         var track_failed: bool = false;
+        var phys: ?*PhysicsWorld = null;
     };
     // bounds for track generation and display
     const bounds_pos = rl.Vector3{ .x = 0, .y = 3, .z = 0 };
@@ -918,6 +1225,22 @@ pub fn marble(io: std.Io) bool {
                 return false;
             };
         }
+        // init marble model + oil-slick shader
+        S.marble_lighting = initMarbleLighting() catch |err| blk: {
+            std.debug.print("Failed to init marble lighting: {}\n", .{err});
+            break :blk null;
+        };
+        const mesh = rl.genMeshSphere(marble_radius, 32, 32);
+        var mbl_model = rl.loadModelFromMesh(mesh) catch |err| blk: {
+            std.debug.print("Failed to create marble model: {}\n", .{err});
+            break :blk null;
+        };
+        if (mbl_model) |*mm| {
+            if (S.marble_lighting) |ml| {
+                applyShaderToModel(mm, ml.shader);
+            }
+            S.marble_model = mm.*;
+        }
         S.initialized = true;
     }
     if (S.err) |err| {
@@ -944,6 +1267,16 @@ pub fn marble(io: std.Io) bool {
             }
         }
     }
+    // step physics simulation
+    if (S.phys) |pw| {
+        phs.step(&pw.state, rl.getFrameTime(), pw.tris);
+    }
+    // derive marble render position from physics (or fall back to static start)
+    const marble_phys_pos: ?rl.Vector3 = if (S.phys) |pw| .{
+        .x = pw.state.pos[0],
+        .y = pw.state.pos[1],
+        .z = pw.state.pos[2],
+    } else null;
     // draw
     rl.beginDrawing();
     defer rl.endDrawing();
@@ -951,7 +1284,7 @@ pub fn marble(io: std.Io) bool {
     if (S.tiles_placed) |tiles_placed| {
         if (S.lighting) |lt| {
             if (S.tiles) |tiles| {
-                drawTrack(tiles, tiles_placed, lt, bounds_pos, bounds_width, bounds_height, bounds_length);
+                drawTrack(tiles, tiles_placed, lt, S.marble_lighting, if (S.marble_model) |*m| m else null, S.marble_visible, S.marble_follow, marble_phys_pos, bounds_pos, bounds_width, bounds_height, bounds_length);
             }
         } else {
             ut.drawTextCentered("Lighting failed to initialize", 20, .red);
@@ -971,6 +1304,11 @@ pub fn marble(io: std.Io) bool {
     // reset button
     const reset_x = ut.button_spacing * 2 + ut.button_height;
     if (ut.btn(reset_x, ut.button_spacing, 60, ut.button_height, "Reset")) {
+        // tear down physics before freeing tiles
+        if (S.phys) |pw| {
+            pw.deinit();
+            S.phys = null;
+        }
         if (S.tiles_placed) |*old| {
             old.deinit(std.heap.c_allocator);
             S.tiles_placed = null;
@@ -978,6 +1316,7 @@ pub fn marble(io: std.Io) bool {
         S.stack_depth = 0;
         S.track_done = false;
         S.track_failed = false;
+        S.marble_visible = false;
         if (S.tiles) |tiles| {
             S.tiles_placed = initTrack(tiles, bounds_pos, bounds_width, bounds_height, bounds_length) catch |err| blk: {
                 std.debug.print("Failed to reset track: {}\n", .{err});
@@ -986,5 +1325,26 @@ pub fn marble(io: std.Io) bool {
             };
         }
     }
+    // marble button
+    const marble_x = reset_x + 60 + ut.button_spacing;
+    if (ut.btn(marble_x, ut.button_spacing, 80, ut.button_height, "Marble")) {
+        S.marble_visible = true;
+        if (S.tiles_placed) |tp| {
+            if (marbleStartPos(tp)) |mpos| {
+                if (S.phys) |pw| {
+                    // Reset marble to start position with zero velocity.
+                    pw.state = phs.State.init(.{ mpos.x, mpos.y, mpos.z });
+                } else {
+                    S.phys = initPhysicsWorld(tp, mpos) catch |err| blk: {
+                        std.debug.print("initPhysicsWorld failed: {}\n", .{err});
+                        break :blk null;
+                    };
+                }
+            }
+        }
+    }
+    // follow checkbox
+    const follow_x = marble_x + 80 + ut.button_spacing;
+    ut.checkbox(follow_x, ut.button_spacing + 7, 15, 15, "Follow", &S.marble_follow);
     return false;
 }
